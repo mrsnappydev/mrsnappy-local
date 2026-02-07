@@ -6,17 +6,38 @@ import { join, basename } from 'path';
 import { homedir, platform } from 'os';
 import { detectFormat, extractQuantization, extractParameters, ModelFormat } from './types';
 
-// Default paths by OS for each provider
-const OLLAMA_PATHS: Record<string, string> = {
-  linux: join(homedir(), '.ollama', 'models'),
-  darwin: join(homedir(), '.ollama', 'models'),
-  win32: join(homedir(), '.ollama', 'models'),
+// Default paths by OS for each provider - try multiple common locations
+const OLLAMA_PATHS: Record<string, string[]> = {
+  linux: [
+    join(homedir(), '.ollama', 'models'),
+    '/usr/share/ollama/.ollama/models',
+    '/var/lib/ollama/models',
+  ],
+  darwin: [
+    join(homedir(), '.ollama', 'models'),
+  ],
+  win32: [
+    join(homedir(), '.ollama', 'models'),
+    join(homedir(), 'AppData', 'Local', 'Ollama', 'models'),
+  ],
 };
 
-const LMSTUDIO_PATHS: Record<string, string> = {
-  linux: join(homedir(), '.cache', 'lm-studio', 'models'),
-  darwin: join(homedir(), 'Library', 'Application Support', 'LM Studio', 'models'),
-  win32: join(homedir(), '.cache', 'lm-studio', 'models'),
+const LMSTUDIO_PATHS: Record<string, string[]> = {
+  linux: [
+    join(homedir(), '.lmstudio', 'models'),
+    join(homedir(), '.cache', 'lm-studio', 'models'),
+    join(homedir(), '.local', 'share', 'lm-studio', 'models'),
+    join(homedir(), 'LM Studio', 'models'),
+  ],
+  darwin: [
+    join(homedir(), '.lmstudio', 'models'),
+    join(homedir(), 'Library', 'Application Support', 'LM Studio', 'models'),
+  ],
+  win32: [
+    join(homedir(), '.lmstudio', 'models'),
+    join(homedir(), '.cache', 'lm-studio', 'models'),
+    join(homedir(), 'AppData', 'Local', 'LM Studio', 'models'),
+  ],
 };
 
 export interface ExistingModel {
@@ -59,16 +80,40 @@ export interface DetectionResult {
   models: ExistingModel[];
   error?: string;
   totalSize: number;
+  checkedPaths?: string[];  // Paths that were checked during detection
 }
 
 /**
- * Get default paths for providers on current platform
+ * Get all possible paths for providers on current platform
  */
-export function getDefaultProviderPaths(): ProviderPaths {
+export function getAllProviderPaths(): { ollama: string[]; lmstudio: string[] } {
   const plat = platform();
   return {
     ollama: OLLAMA_PATHS[plat] || OLLAMA_PATHS.linux,
     lmstudio: LMSTUDIO_PATHS[plat] || LMSTUDIO_PATHS.linux,
+  };
+}
+
+/**
+ * Find the first existing path from a list
+ */
+async function findExistingPath(paths: string[]): Promise<string | null> {
+  for (const p of paths) {
+    if (await directoryExists(p)) {
+      return p;
+    }
+  }
+  return null;
+}
+
+/**
+ * Get default paths for providers on current platform (first valid ones)
+ */
+export function getDefaultProviderPaths(): ProviderPaths {
+  const all = getAllProviderPaths();
+  return {
+    ollama: all.ollama[0],
+    lmstudio: all.lmstudio[0],
   };
 }
 
@@ -148,8 +193,19 @@ function getOllamaModelSize(manifest: OllamaManifest): number {
  *     sha256-<hash> (actual model data)
  */
 export async function detectOllamaModels(customPath?: string): Promise<DetectionResult> {
-  const paths = getDefaultProviderPaths();
-  const ollamaPath = customPath || paths.ollama;
+  const allPaths = getAllProviderPaths();
+  
+  // If custom path, use that; otherwise find first existing path
+  let ollamaPath: string;
+  let checkedPaths: string[] = [];
+  
+  if (customPath) {
+    ollamaPath = customPath;
+  } else {
+    const foundPath = await findExistingPath(allPaths.ollama);
+    checkedPaths = allPaths.ollama;
+    ollamaPath = foundPath || allPaths.ollama[0];
+  }
   
   const result: DetectionResult = {
     provider: 'ollama',
@@ -157,10 +213,11 @@ export async function detectOllamaModels(customPath?: string): Promise<Detection
     exists: false,
     models: [],
     totalSize: 0,
+    checkedPaths,
   };
   
   if (!(await directoryExists(ollamaPath))) {
-    result.error = 'Ollama models directory not found';
+    result.error = `Ollama models directory not found. Checked: ${checkedPaths.join(', ') || ollamaPath}`;
     return result;
   }
   
@@ -261,8 +318,19 @@ export async function detectOllamaModels(customPath?: string): Promise<Detection
  *       <file>.gguf
  */
 export async function detectLMStudioModels(customPath?: string): Promise<DetectionResult> {
-  const paths = getDefaultProviderPaths();
-  const lmstudioPath = customPath || paths.lmstudio;
+  const allPaths = getAllProviderPaths();
+  
+  // If custom path, use that; otherwise find first existing path
+  let lmstudioPath: string;
+  let checkedPaths: string[] = [];
+  
+  if (customPath) {
+    lmstudioPath = customPath;
+  } else {
+    const foundPath = await findExistingPath(allPaths.lmstudio);
+    checkedPaths = allPaths.lmstudio;
+    lmstudioPath = foundPath || allPaths.lmstudio[0];
+  }
   
   const result: DetectionResult = {
     provider: 'lmstudio',
@@ -270,10 +338,11 @@ export async function detectLMStudioModels(customPath?: string): Promise<Detecti
     exists: false,
     models: [],
     totalSize: 0,
+    checkedPaths,
   };
   
   if (!(await directoryExists(lmstudioPath))) {
-    result.error = 'LM Studio models directory not found';
+    result.error = `LM Studio models directory not found. Checked: ${checkedPaths.join(', ') || lmstudioPath}`;
     return result;
   }
   

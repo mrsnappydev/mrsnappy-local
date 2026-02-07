@@ -37,6 +37,7 @@ interface DetectionResult {
   totalSize: number;
   notImported: number;
   error?: string;
+  checkedPaths?: string[];
 }
 
 interface DetectResponse {
@@ -279,14 +280,29 @@ export default function ImportExistingModels({ onImportComplete }: ImportExistin
         {/* Content */}
         {isExpanded && (
           <div className="border-t border-zinc-700">
+            {/* Show path info */}
+            <div className="px-4 py-2 bg-zinc-900/50 border-b border-zinc-700">
+              <p className="text-xs text-zinc-500">
+                📁 Path: <code className="text-zinc-400">{result.path}</code>
+              </p>
+              {result.error && (
+                <p className="text-xs text-red-400 mt-1">⚠️ {result.error}</p>
+              )}
+            </div>
+            
             {!result.exists ? (
               <div className="p-6 text-center text-zinc-500">
                 <p>{name} models directory not found</p>
-                <p className="text-xs mt-1">{result.path}</p>
+                <p className="text-xs mt-2 text-zinc-600">
+                  Make sure {name} is installed and has downloaded at least one model.
+                </p>
               </div>
             ) : result.models.length === 0 ? (
               <div className="p-6 text-center text-zinc-500">
                 <p>No models found in {name}</p>
+                <p className="text-xs mt-1 text-zinc-600">
+                  The directory exists but no models were detected.
+                </p>
               </div>
             ) : (
               <>

@@ -40,6 +40,9 @@
 - [ ] Calendar integration 📅
 - [ ] File management integration 📁
 
+### Core Features (In Progress)
+- [x] Memory system (remember user preferences) 🧠 (2025-02-07 night shift)
+
 ## 📋 Planned
 
 ### Phase 1 Remaining (Stretch Goals)
@@ -73,7 +76,7 @@
 - [ ] No terminal/CLI knowledge required
 
 ### Core Features (Ongoing)
-- [ ] Memory system (remember user preferences)
+- [x] Memory system (remember user preferences) 🧠
 - [ ] Voice input/output
 - [ ] Image analysis (vision models)
 - [ ] Conversation folders/tags

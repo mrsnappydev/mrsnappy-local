@@ -1,16 +1,18 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Settings, Zap, Loader2, RefreshCw, Cpu, Puzzle, HelpCircle } from 'lucide-react';
+import { Send, Settings, Zap, Loader2, RefreshCw, Cpu, Puzzle, HelpCircle, Brain } from 'lucide-react';
 import { useConversations } from '@/hooks/useConversations';
 import { useSettings } from '@/hooks/useSettings';
 import { useIntegrations } from '@/hooks/useIntegrations';
 import { useUser } from '@/hooks/useUser';
 import { useProjects } from '@/hooks/useProjects';
+import { useMemory } from '@/hooks/useMemory';
 import { Message } from '@/types/chat';
 import { ProviderType } from '@/lib/providers';
 import { parseToolCalls, ToolCall, ToolResult } from '@/lib/tools';
 import { buildToolsSystemPrompt } from '@/lib/tools/registry';
+import { formatMemoriesForPrompt } from '@/types/memory';
 import Sidebar from '@/components/Sidebar';
 import SettingsModal from '@/components/SettingsModal';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
@@ -26,6 +28,7 @@ import WelcomeModal from '@/components/WelcomeModal';
 import ProjectSelector from '@/components/ProjectSelector';
 import NewProjectModal from '@/components/NewProjectModal';
 import ProjectConfirmation from '@/components/ProjectConfirmation';
+import MemoryPanel from '@/components/MemoryPanel';
 
 export default function Home() {
   const {
@@ -83,6 +86,21 @@ export default function Home() {
     dismissConfirmation,
   } = useProjects();
 
+  const {
+    memory,
+    isLoaded: memoryLoaded,
+    toggleEnabled: toggleMemoryEnabled,
+    toggleAutoExtract: toggleMemoryAutoExtract,
+    addMemory,
+    addMemories,
+    updateMemory,
+    deleteMemory,
+    clearMemories,
+    hasSimilarMemory,
+    exportMemories,
+    importMemories,
+  } = useMemory();
+
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
@@ -92,6 +110,8 @@ export default function Home() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isModelHubOpen, setIsModelHubOpen] = useState(false);
   const [isIntegrationsOpen, setIsIntegrationsOpen] = useState(false);
+  const [isMemoryOpen, setIsMemoryOpen] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [helpTopic, setHelpTopic] = useState<string | undefined>(undefined);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -99,7 +119,7 @@ export default function Home() {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const messages = currentConversation?.messages || [];
-  const isLoaded = conversationsLoaded && settingsLoaded && integrationsLoaded && userLoaded && projectsLoaded;
+  const isLoaded = conversationsLoaded && settingsLoaded && integrationsLoaded && userLoaded && projectsLoaded && memoryLoaded;
   
   // Get enabled integrations for tool support
   const enabledIntegrations = getEnabledIntegrations();
@@ -151,7 +171,7 @@ export default function Home() {
     setIsConnected(connected);
   }, []);
 
-  // Build request body with provider settings and tool support
+  // Build request body with provider settings, tool support, and memory
   const buildRequestBody = (messagesForApi: { role: string; content: string }[]) => {
     // Add tools to system prompt if any integrations are enabled or project is active
     const toolsPromptAddition = buildToolsSystemPrompt(
@@ -166,7 +186,10 @@ export default function Home() {
       userPromptAddition = `\n\nYou are chatting with ${user.name}. Address them by name occasionally to make the conversation more personal.`;
     }
     
-    const fullSystemPrompt = settings.systemPrompt + userPromptAddition + toolsPromptAddition;
+    // Add memory context if enabled
+    const memoryPromptAddition = formatMemoriesForPrompt(memory);
+    
+    const fullSystemPrompt = settings.systemPrompt + userPromptAddition + memoryPromptAddition + toolsPromptAddition;
     
     return {
       messages: messagesForApi,
@@ -616,6 +639,44 @@ export default function Home() {
     setIsHelpOpen(true);
   }, []);
 
+  // Extract memories from current conversation
+  const extractMemoriesFromConversation = useCallback(async () => {
+    if (!currentConversation || messages.length === 0) return;
+    
+    setIsExtracting(true);
+    try {
+      const response = await fetch('/api/memory/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: messages.map(m => ({ role: m.role, content: m.content })),
+          provider: settings.provider,
+          providerUrl: settings.providerUrl,
+          model: settings.model,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Extraction failed');
+      
+      const { memories } = await response.json();
+      
+      // Filter out duplicates before adding
+      const newMemories = memories.filter(
+        (m: { content: string }) => !hasSimilarMemory(m.content)
+      );
+      
+      if (newMemories.length > 0) {
+        addMemories(newMemories.map((m: { category: string; content: string; importance: string }) => ({
+          ...m,
+          source: currentConversation.id,
+        })));
+      }
+    } catch (error) {
+      console.error('Memory extraction error:', error);
+    }
+    setIsExtracting(false);
+  }, [currentConversation, messages, settings, hasSimilarMemory, addMemories]);
+
   // Handle welcome modal completion
   const handleWelcomeComplete = useCallback((name: string, avatar: string) => {
     setName(name);
@@ -719,6 +780,17 @@ export default function Home() {
               title={`Integrations (${enabledIntegrations.length} active)`}
             >
               <Puzzle className="w-5 h-5" />
+            </button>
+            
+            {/* Memory button */}
+            <button 
+              onClick={() => setIsMemoryOpen(true)}
+              className={`p-2 rounded-lg hover:bg-zinc-800 transition-colors border border-zinc-700 ${
+                memory.enabled && memory.items.length > 0 ? 'text-pink-400' : 'text-zinc-400'
+              }`}
+              title={`Memory (${memory.items.length} item${memory.items.length !== 1 ? 's' : ''})`}
+            >
+              <Brain className="w-5 h-5" />
             </button>
             <button 
               onClick={handleNewConversation}
@@ -913,6 +985,23 @@ export default function Home() {
         integrations={integrations}
         onUpdateIntegrations={updateIntegrations}
         onOpenHelp={openHelp}
+      />
+
+      {/* Memory Panel Modal */}
+      <MemoryPanel
+        isOpen={isMemoryOpen}
+        onClose={() => setIsMemoryOpen(false)}
+        memory={memory}
+        onToggleEnabled={toggleMemoryEnabled}
+        onToggleAutoExtract={toggleMemoryAutoExtract}
+        onAddMemory={addMemory}
+        onUpdateMemory={updateMemory}
+        onDeleteMemory={deleteMemory}
+        onClearMemories={clearMemories}
+        onExportMemories={exportMemories}
+        onImportMemories={importMemories}
+        onExtractFromConversation={extractMemoriesFromConversation}
+        isExtracting={isExtracting}
       />
 
       {/* Help Guide Modal */}
