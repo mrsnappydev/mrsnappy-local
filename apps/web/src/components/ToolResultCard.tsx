@@ -1,8 +1,34 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { ExternalLink, Search, CheckCircle, XCircle } from 'lucide-react';
 import { ToolResult, WebSearchResult, ImageSearchResult } from '@/lib/tools';
+import { ChartConfig } from '@/lib/tools/charts';
+import { DiagramConfig } from '@/lib/tools/diagrams';
 import ImageResultCard from './ImageResultCard';
+
+// Dynamic imports for chart and diagram renderers (client-side only)
+const ChartRenderer = dynamic(() => import('./ChartRenderer'), { 
+  ssr: false,
+  loading: () => (
+    <div className="my-4 rounded-xl bg-zinc-800/50 border border-zinc-700/50 p-6">
+      <div className="h-48 flex items-center justify-center">
+        <div className="animate-pulse text-zinc-500">Loading chart...</div>
+      </div>
+    </div>
+  ),
+});
+
+const MermaidDiagram = dynamic(() => import('./MermaidDiagram'), { 
+  ssr: false,
+  loading: () => (
+    <div className="my-4 rounded-xl bg-zinc-800/50 border border-zinc-700/50 p-6">
+      <div className="h-48 flex items-center justify-center">
+        <div className="animate-pulse text-zinc-500">Loading diagram...</div>
+      </div>
+    </div>
+  ),
+});
 
 interface ToolResultCardProps {
   result: ToolResult;
@@ -19,6 +45,18 @@ export default function ToolResultCard({ result }: ToolResultCardProps) {
         <p className="text-sm text-red-300">{result.error}</p>
       </div>
     );
+  }
+
+  // Chart results - render interactive chart
+  if (result.displayType === 'chart' && result.result) {
+    const chartConfig = result.result as ChartConfig;
+    return <ChartRenderer config={chartConfig} />;
+  }
+
+  // Diagram results - render Mermaid diagram
+  if (result.displayType === 'diagram' && result.result) {
+    const diagramConfig = result.result as DiagramConfig;
+    return <MermaidDiagram config={diagramConfig} />;
   }
 
   // Image search results - show image grid

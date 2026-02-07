@@ -23,6 +23,8 @@ import {
   executeCalendarSearch,
 } from './calendar';
 import { projectTools } from './project-files';
+import { chartTool, executeChartCreate, ChartDataset } from './charts';
+import { diagramTool, executeDiagramCreate, getDiagramToolPrompt } from './diagrams';
 // Note: project tool executors are in project-files-server.ts and called from API routes
 import { IntegrationState } from '../integrations/types';
 
@@ -33,6 +35,8 @@ const ALL_TOOLS: ToolDefinition[] = [
   ...gmailTools,
   ...calendarTools,
   ...projectTools,
+  chartTool,
+  diagramTool,
   // Add more tools here as we build them
 ];
 
@@ -146,6 +150,23 @@ const TOOL_EXECUTORS: Record<string, ToolExecutor> = {
     return executeCalendarSearch(query, maxResults);
   },
   
+  // Chart Tool
+  'chart_create': async (args) => {
+    const chartType = args.chartType as string;
+    const labels = args.labels as string[];
+    const datasets = args.datasets as ChartDataset[];
+    const title = args.title as string | undefined;
+    return executeChartCreate(chartType, labels, datasets, title);
+  },
+  
+  // Diagram Tool
+  'diagram_create': async (args) => {
+    const diagramType = args.diagramType as string;
+    const code = args.code as string;
+    const title = args.title as string | undefined;
+    return executeDiagramCreate(diagramType, code, title);
+  },
+  
   // Project Tools - these are registered but executed via API route
   // See /api/tools/execute/route.ts which imports project-files-server.ts
   'project_create_file': async () => ({
@@ -191,6 +212,10 @@ export function getAvailableTools(integrations: IntegrationState[], activeProjec
     // Project tools are available when a project is active
     if (tool.integration === 'projects') {
       return !!activeProjectPath;
+    }
+    // Visual tools (charts, diagrams) are always available
+    if (tool.integration === 'visuals') {
+      return true;
     }
     return enabledIntegrations.has(tool.integration as IntegrationState['type']);
   });
@@ -301,6 +326,11 @@ export function buildToolsSystemPrompt(
     }
     
     prompt += 'When you need information you don\'t have, use the appropriate tool. Always explain what you\'re doing before calling a tool.\n';
+    
+    // Add diagram examples if diagram tool is available
+    if (tools.some(t => t.name === 'diagram_create')) {
+      prompt += getDiagramToolPrompt();
+    }
   }
   
   return prompt;
