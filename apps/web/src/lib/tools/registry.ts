@@ -11,6 +11,8 @@ import {
   executeGmailSearch,
   executeGmailReply,
 } from './gmail';
+import { projectTools } from './project-files';
+// Note: project tool executors are in project-files-server.ts and called from API routes
 import { IntegrationState } from '../integrations/types';
 
 // All available tools
@@ -18,6 +20,7 @@ const ALL_TOOLS: ToolDefinition[] = [
   webSearchTool,
   imageSearchTool,
   ...gmailTools,
+  ...projectTools,
   // Add more tools here as we build them
 ];
 
@@ -71,25 +74,61 @@ const TOOL_EXECUTORS: Record<string, ToolExecutor> = {
     return executeGmailReply(emailId, body);
   },
   
-  // Add more executors here
+  // Project Tools - these are registered but executed via API route
+  // See /api/tools/execute/route.ts which imports project-files-server.ts
+  'project_create_file': async () => ({
+    toolCallId: '',
+    name: 'project_create_file',
+    success: false,
+    error: 'Project tools must be executed via API route',
+  }),
+  
+  'project_read_file': async () => ({
+    toolCallId: '',
+    name: 'project_read_file',
+    success: false,
+    error: 'Project tools must be executed via API route',
+  }),
+  
+  'project_list_files': async () => ({
+    toolCallId: '',
+    name: 'project_list_files',
+    success: false,
+    error: 'Project tools must be executed via API route',
+  }),
+  
+  'project_delete_file': async () => ({
+    toolCallId: '',
+    name: 'project_delete_file',
+    success: false,
+    error: 'Project tools must be executed via API route',
+  }),
 };
 
 /**
  * Get tools available for the current integration state
+ * @param integrations - Enabled integrations
+ * @param activeProjectPath - If set, project tools are available
  */
-export function getAvailableTools(integrations: IntegrationState[]): ToolDefinition[] {
+export function getAvailableTools(integrations: IntegrationState[], activeProjectPath?: string | null): ToolDefinition[] {
   const enabledIntegrations = new Set(
     integrations.filter(i => i.enabled && i.status !== 'error').map(i => i.type)
   );
   
-  return ALL_TOOLS.filter(tool => enabledIntegrations.has(tool.integration as IntegrationState['type']));
+  return ALL_TOOLS.filter(tool => {
+    // Project tools are available when a project is active
+    if (tool.integration === 'projects') {
+      return !!activeProjectPath;
+    }
+    return enabledIntegrations.has(tool.integration as IntegrationState['type']);
+  });
 }
 
 /**
  * Get tools in LLM-compatible format
  */
-export function getToolsForLLM(integrations: IntegrationState[]): ToolForLLM[] {
-  return getAvailableTools(integrations).map(toolToLLMFormat);
+export function getToolsForLLM(integrations: IntegrationState[], activeProjectPath?: string | null): ToolForLLM[] {
+  return getAvailableTools(integrations, activeProjectPath).map(toolToLLMFormat);
 }
 
 /**
@@ -146,31 +185,51 @@ export function getAllTools(): ToolDefinition[] {
 
 /**
  * Build system prompt addition for tools
+ * @param integrations - Enabled integrations
+ * @param activeProjectPath - If set, project tools are available
+ * @param projectName - Name of the active project (for context)
  */
-export function buildToolsSystemPrompt(integrations: IntegrationState[]): string {
-  const tools = getAvailableTools(integrations);
+export function buildToolsSystemPrompt(
+  integrations: IntegrationState[], 
+  activeProjectPath?: string | null,
+  projectName?: string | null
+): string {
+  const tools = getAvailableTools(integrations, activeProjectPath);
   
-  if (tools.length === 0) {
+  if (tools.length === 0 && !activeProjectPath) {
     return '';
   }
   
-  let prompt = '\n\n## Available Tools\n\n';
-  prompt += 'You have access to the following tools. To use a tool, wrap your call in <tool_call> tags with JSON:\n\n';
-  prompt += '```\n<tool_call>{"name": "tool_name", "arguments": {"param": "value"}}</tool_call>\n```\n\n';
-  prompt += 'Available tools:\n\n';
+  let prompt = '';
   
-  for (const tool of tools) {
-    prompt += `### ${tool.icon} ${tool.displayName} (${tool.name})\n`;
-    prompt += `${tool.description}\n\n`;
-    prompt += 'Parameters:\n';
-    for (const param of tool.parameters) {
-      const required = param.required ? ' (required)' : ' (optional)';
-      prompt += `- **${param.name}** (${param.type})${required}: ${param.description}\n`;
-    }
-    prompt += '\n';
+  // Add project context if active
+  if (activeProjectPath && projectName) {
+    prompt += `\n\n## Current Project Context\n\n`;
+    prompt += `You are working in a project workspace:\n`;
+    prompt += `- **Project Name:** ${projectName}\n`;
+    prompt += `- **Project Path:** ${activeProjectPath}\n\n`;
+    prompt += `When the user asks you to create, read, or modify files, assume they want to work within this project folder unless they specify otherwise.\n`;
   }
   
-  prompt += 'When you need information you don\'t have, use the appropriate tool. Always explain what you\'re doing before calling a tool.\n';
+  if (tools.length > 0) {
+    prompt += '\n\n## Available Tools\n\n';
+    prompt += 'You have access to the following tools. To use a tool, wrap your call in <tool_call> tags with JSON:\n\n';
+    prompt += '```\n<tool_call>{"name": "tool_name", "arguments": {"param": "value"}}</tool_call>\n```\n\n';
+    prompt += 'Available tools:\n\n';
+    
+    for (const tool of tools) {
+      prompt += `### ${tool.icon} ${tool.displayName} (${tool.name})\n`;
+      prompt += `${tool.description}\n\n`;
+      prompt += 'Parameters:\n';
+      for (const param of tool.parameters) {
+        const required = param.required ? ' (required)' : ' (optional)';
+        prompt += `- **${param.name}** (${param.type})${required}: ${param.description}\n`;
+      }
+      prompt += '\n';
+    }
+    
+    prompt += 'When you need information you don\'t have, use the appropriate tool. Always explain what you\'re doing before calling a tool.\n';
+  }
   
   return prompt;
 }

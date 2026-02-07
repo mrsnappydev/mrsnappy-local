@@ -6,6 +6,7 @@ import { useConversations } from '@/hooks/useConversations';
 import { useSettings } from '@/hooks/useSettings';
 import { useIntegrations } from '@/hooks/useIntegrations';
 import { useUser } from '@/hooks/useUser';
+import { useProjects } from '@/hooks/useProjects';
 import { Message } from '@/types/chat';
 import { ProviderType } from '@/lib/providers';
 import { parseToolCalls, ToolCall, ToolResult } from '@/lib/tools';
@@ -22,6 +23,9 @@ import HelpGuide from '@/components/HelpGuide';
 import ThinkingIndicator from '@/components/ThinkingIndicator';
 import SystemStats from '@/components/SystemStats';
 import WelcomeModal from '@/components/WelcomeModal';
+import ProjectSelector from '@/components/ProjectSelector';
+import NewProjectModal from '@/components/NewProjectModal';
+import ProjectConfirmation from '@/components/ProjectConfirmation';
 
 export default function Home() {
   const {
@@ -64,8 +68,24 @@ export default function Home() {
     completeOnboarding,
   } = useUser();
 
+  const {
+    projects,
+    activeProject,
+    lastProject,
+    isLoaded: projectsLoaded,
+    showConfirmation: showProjectConfirmation,
+    hasConfirmedSession,
+    createProject,
+    switchProject,
+    deleteProject,
+    getProjectsSorted,
+    confirmLastProject,
+    dismissConfirmation,
+  } = useProjects();
+
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
   const [hasCheckedInitialConnection, setHasCheckedInitialConnection] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
@@ -79,7 +99,7 @@ export default function Home() {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const messages = currentConversation?.messages || [];
-  const isLoaded = conversationsLoaded && settingsLoaded && integrationsLoaded && userLoaded;
+  const isLoaded = conversationsLoaded && settingsLoaded && integrationsLoaded && userLoaded && projectsLoaded;
   
   // Get enabled integrations for tool support
   const enabledIntegrations = getEnabledIntegrations();
@@ -133,8 +153,12 @@ export default function Home() {
 
   // Build request body with provider settings and tool support
   const buildRequestBody = (messagesForApi: { role: string; content: string }[]) => {
-    // Add tools to system prompt if any integrations are enabled
-    const toolsPromptAddition = buildToolsSystemPrompt(enabledIntegrations);
+    // Add tools to system prompt if any integrations are enabled or project is active
+    const toolsPromptAddition = buildToolsSystemPrompt(
+      enabledIntegrations,
+      activeProject?.path || null,
+      activeProject ? `${activeProject.icon} ${activeProject.name}` : null
+    );
     
     // Add user personalization if name is set
     let userPromptAddition = '';
@@ -150,6 +174,7 @@ export default function Home() {
       providerUrl: settings.providerUrl,
       model: settings.model,
       systemPrompt: fullSystemPrompt,
+      projectPath: activeProject?.path || null,
     };
   };
 
@@ -164,7 +189,10 @@ export default function Home() {
       const response = await fetch('/api/tools/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ toolCalls }),
+        body: JSON.stringify({ 
+          toolCalls,
+          projectPath: activeProject?.path || null,
+        }),
       });
       
       if (!response.ok) {
@@ -645,7 +673,15 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {/* Provider Status Bar - New Component */}
+            {/* Project Selector */}
+            <ProjectSelector
+              projects={getProjectsSorted()}
+              activeProject={activeProject}
+              onSelectProject={switchProject}
+              onNewProject={() => setIsNewProjectOpen(true)}
+            />
+            
+            {/* Provider Status Bar */}
             <ProviderStatusBar
               currentProvider={settings.provider}
               onSwitchProvider={switchProvider}
@@ -895,6 +931,26 @@ export default function Home() {
 
       {/* System Stats Widget */}
       <SystemStats />
+
+      {/* New Project Modal */}
+      <NewProjectModal
+        isOpen={isNewProjectOpen}
+        onClose={() => setIsNewProjectOpen(false)}
+        onCreateProject={createProject}
+      />
+
+      {/* Project Confirmation Modal (on startup) */}
+      {showProjectConfirmation && lastProject && !hasConfirmedSession && (
+        <ProjectConfirmation
+          project={lastProject}
+          onContinue={confirmLastProject}
+          onSwitchProject={() => {
+            dismissConfirmation();
+            setIsNewProjectOpen(true);
+          }}
+          onStartFresh={dismissConfirmation}
+        />
+      )}
     </div>
   );
 }
