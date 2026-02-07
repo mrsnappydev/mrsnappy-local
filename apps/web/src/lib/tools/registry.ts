@@ -1,0 +1,125 @@
+// Tool Registry for MrSnappy Local
+// Central registry of all available tools
+
+import { ToolDefinition, ToolCall, ToolResult, toolToLLMFormat, ToolForLLM } from './types';
+import { webSearchTool, executeWebSearch } from './web-search';
+import { IntegrationState } from '../integrations/types';
+
+// All available tools
+const ALL_TOOLS: ToolDefinition[] = [
+  webSearchTool,
+  // Add more tools here as we build them
+];
+
+// Tool executors mapped by name
+type ToolExecutor = (args: Record<string, unknown>) => Promise<ToolResult>;
+
+const TOOL_EXECUTORS: Record<string, ToolExecutor> = {
+  'web_search': async (args) => {
+    const query = args.query as string;
+    const limit = (args.limit as number) || 5;
+    return executeWebSearch(query, limit);
+  },
+  // Add more executors here
+};
+
+/**
+ * Get tools available for the current integration state
+ */
+export function getAvailableTools(integrations: IntegrationState[]): ToolDefinition[] {
+  const enabledIntegrations = new Set(
+    integrations.filter(i => i.enabled && i.status !== 'error').map(i => i.type)
+  );
+  
+  return ALL_TOOLS.filter(tool => enabledIntegrations.has(tool.integration as IntegrationState['type']));
+}
+
+/**
+ * Get tools in LLM-compatible format
+ */
+export function getToolsForLLM(integrations: IntegrationState[]): ToolForLLM[] {
+  return getAvailableTools(integrations).map(toolToLLMFormat);
+}
+
+/**
+ * Execute a tool call
+ */
+export async function executeTool(call: ToolCall): Promise<ToolResult> {
+  const executor = TOOL_EXECUTORS[call.name];
+  
+  if (!executor) {
+    return {
+      toolCallId: call.id,
+      name: call.name,
+      success: false,
+      error: `Unknown tool: ${call.name}`,
+    };
+  }
+  
+  try {
+    const result = await executor(call.arguments);
+    return {
+      ...result,
+      toolCallId: call.id,
+    };
+  } catch (error) {
+    return {
+      toolCallId: call.id,
+      name: call.name,
+      success: false,
+      error: error instanceof Error ? error.message : 'Tool execution failed',
+    };
+  }
+}
+
+/**
+ * Execute multiple tool calls
+ */
+export async function executeTools(calls: ToolCall[]): Promise<ToolResult[]> {
+  return Promise.all(calls.map(executeTool));
+}
+
+/**
+ * Get a tool definition by name
+ */
+export function getTool(name: string): ToolDefinition | undefined {
+  return ALL_TOOLS.find(t => t.name === name);
+}
+
+/**
+ * Get all tool definitions
+ */
+export function getAllTools(): ToolDefinition[] {
+  return [...ALL_TOOLS];
+}
+
+/**
+ * Build system prompt addition for tools
+ */
+export function buildToolsSystemPrompt(integrations: IntegrationState[]): string {
+  const tools = getAvailableTools(integrations);
+  
+  if (tools.length === 0) {
+    return '';
+  }
+  
+  let prompt = '\n\n## Available Tools\n\n';
+  prompt += 'You have access to the following tools. To use a tool, wrap your call in <tool_call> tags with JSON:\n\n';
+  prompt += '```\n<tool_call>{"name": "tool_name", "arguments": {"param": "value"}}</tool_call>\n```\n\n';
+  prompt += 'Available tools:\n\n';
+  
+  for (const tool of tools) {
+    prompt += `### ${tool.icon} ${tool.displayName} (${tool.name})\n`;
+    prompt += `${tool.description}\n\n`;
+    prompt += 'Parameters:\n';
+    for (const param of tool.parameters) {
+      const required = param.required ? ' (required)' : ' (optional)';
+      prompt += `- **${param.name}** (${param.type})${required}: ${param.description}\n`;
+    }
+    prompt += '\n';
+  }
+  
+  prompt += 'When you need information you don\'t have, use the appropriate tool. Always explain what you\'re doing before calling a tool.\n';
+  
+  return prompt;
+}

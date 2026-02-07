@@ -1,0 +1,20 @@
+{
+  "name": "mrsnappy-local",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local AI assistant powered by Ollama",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspace=apps/web",
+    "desktop": "npm run tauri --workspace=apps/desktop"
+  },
+  "author": "Torsbotech",
+  "license": "MIT",
+  "dependencies": {
+    "styled-jsx": "^5.1.7"
+  }
+}
