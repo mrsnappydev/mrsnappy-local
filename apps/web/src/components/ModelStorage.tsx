@@ -67,9 +67,10 @@ type StorageTab = 'models' | 'import' | 'configure';
 interface ModelStorageProps {
   onRefreshNeeded?: () => void;
   initialTab?: StorageTab;
+  onUseModel?: (modelId: string, provider: 'ollama' | 'lmstudio') => void;
 }
 
-export default function ModelStorage({ onRefreshNeeded, initialTab = 'models' }: ModelStorageProps) {
+export default function ModelStorage({ onRefreshNeeded, initialTab = 'models', onUseModel }: ModelStorageProps) {
   const [activeTab, setActiveTab] = useState<StorageTab>(initialTab);
   const [data, setData] = useState<StorageResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -199,6 +200,46 @@ export default function ModelStorage({ onRefreshNeeded, initialTab = 'models' }:
     }
 
     setDeletingModel(null);
+  };
+
+  // Handle "Use Model" - import if needed, then select it
+  const handleUseModel = async (model: StoredModel, provider: 'ollama' | 'lmstudio') => {
+    // If not imported to this provider yet, import first
+    if (!model.importedTo.includes(provider)) {
+      setImportingModel(`${model.id}-${provider}`);
+      
+      try {
+        const response = await fetch('/api/models/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            modelId: model.id,
+            provider,
+            action: 'import',
+          }),
+        });
+
+        const result = await response.json();
+        if (!result.success) {
+          throw new Error(result.error || 'Import failed');
+        }
+        
+        await fetchStorage();
+      } catch (err) {
+        alert(`Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        setImportingModel(null);
+        return;
+      }
+      
+      setImportingModel(null);
+    }
+    
+    // Now select the model for use
+    const modelName = provider === 'ollama' 
+      ? model.ollamaModelName || model.filename.replace('.gguf', '')
+      : model.filename;
+    
+    onUseModel?.(modelName, provider);
   };
 
   // Handle import complete - refresh storage and switch to models tab
@@ -386,20 +427,56 @@ export default function ModelStorage({ onRefreshNeeded, initialTab = 'models' }:
                   </div>
 
                   {/* Import status */}
-                  <div className="flex items-center gap-2 mt-2">
-                    {/* Ollama status */}
+                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    {/* Use with Ollama button */}
+                    {onUseModel && providerStatus?.providers.ollama.available && (
+                      <button
+                        onClick={() => handleUseModel(model, 'ollama')}
+                        disabled={importingModel === `${model.id}-ollama`}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs bg-amber-500 text-zinc-900 rounded font-medium hover:bg-amber-400 disabled:opacity-50 transition-colors"
+                      >
+                        {importingModel === `${model.id}-ollama` ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <>🦙 Use with Ollama</>
+                        )}
+                      </button>
+                    )}
+                    
+                    {/* Use with LM Studio button */}
+                    {onUseModel && providerStatus?.providers.lmstudio.available && (
+                      <button
+                        onClick={() => handleUseModel(model, 'lmstudio')}
+                        disabled={importingModel === `${model.id}-lmstudio`}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs bg-amber-500 text-zinc-900 rounded font-medium hover:bg-amber-400 disabled:opacity-50 transition-colors"
+                      >
+                        {importingModel === `${model.id}-lmstudio` ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <>🎛️ Use with LM Studio</>
+                        )}
+                      </button>
+                    )}
+                    
+                    {/* Divider */}
+                    {onUseModel && (providerStatus?.providers.ollama.available || providerStatus?.providers.lmstudio.available) && (
+                      <span className="text-zinc-600">|</span>
+                    )}
+                    
+                    {/* Ollama import status */}
                     {model.importedTo.includes('ollama') ? (
                       <button
                         onClick={() => handleRemoveFromProvider(model.id, 'ollama')}
                         disabled={importingModel === `${model.id}-ollama`}
                         className="flex items-center gap-1 px-2 py-1 text-xs bg-green-500/20 text-green-400 rounded hover:bg-green-500/30 transition-colors"
+                        title="Click to remove from Ollama"
                       >
                         {importingModel === `${model.id}-ollama` ? (
                           <Loader2 className="w-3 h-3 animate-spin" />
                         ) : (
                           <Check className="w-3 h-3" />
                         )}
-                        🦙 {model.ollamaModelName || 'Ollama'}
+                        🦙 Imported
                       </button>
                     ) : (
                       <button
@@ -409,29 +486,31 @@ export default function ModelStorage({ onRefreshNeeded, initialTab = 'models' }:
                           !providerStatus?.providers.ollama.available
                         }
                         className="flex items-center gap-1 px-2 py-1 text-xs bg-zinc-700 text-zinc-300 rounded hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Import to Ollama"
                       >
                         {importingModel === `${model.id}-ollama` ? (
                           <Loader2 className="w-3 h-3 animate-spin" />
                         ) : (
                           <Import className="w-3 h-3" />
                         )}
-                        🦙 Import to Ollama
+                        🦙 Import
                       </button>
                     )}
 
-                    {/* LM Studio status */}
+                    {/* LM Studio import status */}
                     {model.importedTo.includes('lmstudio') ? (
                       <button
                         onClick={() => handleRemoveFromProvider(model.id, 'lmstudio')}
                         disabled={importingModel === `${model.id}-lmstudio`}
                         className="flex items-center gap-1 px-2 py-1 text-xs bg-green-500/20 text-green-400 rounded hover:bg-green-500/30 transition-colors"
+                        title="Click to remove from LM Studio"
                       >
                         {importingModel === `${model.id}-lmstudio` ? (
                           <Loader2 className="w-3 h-3 animate-spin" />
                         ) : (
                           <Check className="w-3 h-3" />
                         )}
-                        🎛️ LM Studio
+                        🎛️ Imported
                       </button>
                     ) : (
                       <button
@@ -441,13 +520,14 @@ export default function ModelStorage({ onRefreshNeeded, initialTab = 'models' }:
                           !providerStatus?.providers.lmstudio.available
                         }
                         className="flex items-center gap-1 px-2 py-1 text-xs bg-zinc-700 text-zinc-300 rounded hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Import to LM Studio"
                       >
                         {importingModel === `${model.id}-lmstudio` ? (
                           <Loader2 className="w-3 h-3 animate-spin" />
                         ) : (
                           <Import className="w-3 h-3" />
                         )}
-                        🎛️ Import to LM Studio
+                        🎛️ Import
                       </button>
                     )}
                   </div>

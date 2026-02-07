@@ -376,7 +376,13 @@ export default function ModelHub({
             />
           )}
           {activeTab === 'storage' && (
-            <ModelStorage onRefreshNeeded={fetchRegistry} />
+            <ModelStorage 
+              onRefreshNeeded={fetchRegistry}
+              onUseModel={(modelId, provider) => {
+                onSelectModel(modelId, provider);
+                onClose();
+              }}
+            />
           )}
           {activeTab === 'huggingface' && (
             <HuggingfaceTab
