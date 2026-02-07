@@ -5,6 +5,7 @@ import { Send, Settings, Zap, Loader2, RefreshCw, Cpu, Puzzle, HelpCircle } from
 import { useConversations } from '@/hooks/useConversations';
 import { useSettings } from '@/hooks/useSettings';
 import { useIntegrations } from '@/hooks/useIntegrations';
+import { useUser } from '@/hooks/useUser';
 import { Message } from '@/types/chat';
 import { ProviderType } from '@/lib/providers';
 import { parseToolCalls, ToolCall, ToolResult } from '@/lib/tools';
@@ -18,6 +19,9 @@ import IntegrationsSettings from '@/components/IntegrationsSettings';
 import ProviderStatusBar from '@/components/ProviderStatusBar';
 import NoProviderPrompt from '@/components/NoProviderPrompt';
 import HelpGuide from '@/components/HelpGuide';
+import ThinkingIndicator from '@/components/ThinkingIndicator';
+import SystemStats from '@/components/SystemStats';
+import WelcomeModal from '@/components/WelcomeModal';
 
 export default function Home() {
   const {
@@ -51,6 +55,15 @@ export default function Home() {
     getEnabledIntegrations,
   } = useIntegrations();
 
+  const {
+    user,
+    isLoaded: userLoaded,
+    shouldShowWelcome,
+    setName,
+    setAvatar,
+    completeOnboarding,
+  } = useUser();
+
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
@@ -66,7 +79,7 @@ export default function Home() {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const messages = currentConversation?.messages || [];
-  const isLoaded = conversationsLoaded && settingsLoaded && integrationsLoaded;
+  const isLoaded = conversationsLoaded && settingsLoaded && integrationsLoaded && userLoaded;
   
   // Get enabled integrations for tool support
   const enabledIntegrations = getEnabledIntegrations();
@@ -122,7 +135,14 @@ export default function Home() {
   const buildRequestBody = (messagesForApi: { role: string; content: string }[]) => {
     // Add tools to system prompt if any integrations are enabled
     const toolsPromptAddition = buildToolsSystemPrompt(enabledIntegrations);
-    const fullSystemPrompt = settings.systemPrompt + toolsPromptAddition;
+    
+    // Add user personalization if name is set
+    let userPromptAddition = '';
+    if (user.name) {
+      userPromptAddition = `\n\nYou are chatting with ${user.name}. Address them by name occasionally to make the conversation more personal.`;
+    }
+    
+    const fullSystemPrompt = settings.systemPrompt + userPromptAddition + toolsPromptAddition;
     
     return {
       messages: messagesForApi,
@@ -568,6 +588,17 @@ export default function Home() {
     setIsHelpOpen(true);
   }, []);
 
+  // Handle welcome modal completion
+  const handleWelcomeComplete = useCallback((name: string, avatar: string) => {
+    setName(name);
+    setAvatar(avatar);
+  }, [setName, setAvatar]);
+
+  // Handle skipping welcome
+  const handleWelcomeSkip = useCallback(() => {
+    completeOnboarding();
+  }, [completeOnboarding]);
+
   // Don't render until loaded from localStorage
   if (!isLoaded) {
     return (
@@ -604,7 +635,13 @@ export default function Home() {
             </div>
             <div>
               <h1 className="font-bold text-lg">MrSnappy</h1>
-              <p className="text-xs text-zinc-500">Local AI Assistant</p>
+              <p className="text-xs text-zinc-500">
+                {user.name ? (
+                  <>Hi, <span className="text-amber-400">{user.avatar} {user.name}</span>!</>
+                ) : (
+                  'Local AI Assistant'
+                )}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -680,7 +717,9 @@ export default function Home() {
               <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center mb-6">
                 <Zap className="w-10 h-10 text-zinc-900" />
               </div>
-              <h2 className="text-2xl font-bold mb-2">Hey, I'm MrSnappy ⚡</h2>
+              <h2 className="text-2xl font-bold mb-2">
+                {user.name ? `Hey ${user.name}, I'm MrSnappy ⚡` : "Hey, I'm MrSnappy ⚡"}
+              </h2>
               <p className="text-zinc-500 max-w-md">
                 Your local AI assistant. I run entirely on your machine using {providerName} — 
                 private, fast, and always available.
@@ -722,7 +761,7 @@ export default function Home() {
                       : 'bg-gradient-to-br from-amber-400 to-amber-600'
                   }`}>
                     {message.role === 'user' ? (
-                      <span className="text-sm">👤</span>
+                      <span className="text-sm">{user.avatar || '👤'}</span>
                     ) : (
                       <Zap className="w-4 h-4 text-zinc-900" />
                     )}
@@ -767,17 +806,7 @@ export default function Home() {
                   </div>
                 </div>
               ))}
-              {isLoading && !streamingMessageId && (
-                <div className="flex gap-4 mb-6">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
-                    <Zap className="w-4 h-4 text-zinc-900" />
-                  </div>
-                  <div className="flex items-center gap-2 text-zinc-500">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span className="text-sm">Thinking...</span>
-                  </div>
-                </div>
-              )}
+              <ThinkingIndicator isVisible={isLoading && !streamingMessageId} />
               <div ref={messagesEndRef} />
             </div>
           )}
@@ -856,6 +885,16 @@ export default function Home() {
         onClose={() => setIsHelpOpen(false)}
         initialTopic={helpTopic}
       />
+
+      {/* Welcome Modal (first visit) */}
+      <WelcomeModal
+        isOpen={shouldShowWelcome}
+        onComplete={handleWelcomeComplete}
+        onSkip={handleWelcomeSkip}
+      />
+
+      {/* System Stats Widget */}
+      <SystemStats />
     </div>
   );
 }
