@@ -160,8 +160,10 @@ export default function ModelHub({
     downloadAbortRef.current.set(modelId, abortController);
     
     try {
+      // For Huggingface, use direct download to central storage
+      const directParam = source === 'huggingface' ? '&direct=true' : '';
       const response = await fetch(
-        `/api/models/download?model=${encodeURIComponent(modelId)}&source=${source}`,
+        `/api/models/download?model=${encodeURIComponent(modelId)}&source=${source}${directParam}`,
         { signal: abortController.signal }
       );
       
