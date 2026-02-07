@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createProvider, ProviderType, ChatMessage } from '@/lib/providers';
+import { ProviderType, ChatMessage } from '@/lib/providers';
+
+// Server-side direct calls to providers (no CORS issues here)
+const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+const LMSTUDIO_URL = process.env.LMSTUDIO_URL || 'http://localhost:1234';
 
 const DEFAULT_SYSTEM_PROMPT = `You are MrSnappy ⚡, a friendly and helpful local AI assistant.
 
@@ -20,8 +24,61 @@ interface ChatRequest {
   providerUrl?: string;
   model?: string;
   systemPrompt?: string;
+  temperature?: number;
   // Legacy support
   ollamaUrl?: string;
+}
+
+async function chatWithOllama(messages: ChatMessage[], model: string, temperature?: number) {
+  const res = await fetch(`${OLLAMA_URL}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: false,
+      ...(temperature !== undefined && { options: { temperature } }),
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Ollama error: ${res.status} ${res.statusText}`);
+  }
+
+  const data = await res.json();
+  return {
+    content: data.message?.content || '',
+    model: data.model,
+    done: data.done,
+  };
+}
+
+async function chatWithLMStudio(messages: ChatMessage[], model: string, temperature?: number) {
+  const res = await fetch(`${LMSTUDIO_URL}/v1/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer lm-studio',
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: false,
+      ...(temperature !== undefined && { temperature }),
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`LM Studio error: ${res.status} ${res.statusText}`);
+  }
+
+  const data = await res.json();
+  const choice = data.choices[0];
+  return {
+    content: choice?.message?.content || '',
+    model: data.model,
+    done: true,
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -29,31 +86,25 @@ export async function POST(request: NextRequest) {
     const { 
       messages, 
       provider: providerType = 'ollama',
-      providerUrl,
-      ollamaUrl, // Legacy support
       model = 'llama3.2',
       systemPrompt = DEFAULT_SYSTEM_PROMPT,
+      temperature,
     } = await request.json() as ChatRequest;
 
-    // Determine the URL (support legacy ollamaUrl)
-    const baseUrl = providerUrl || ollamaUrl || (
-      providerType === 'lmstudio' 
-        ? 'http://localhost:1234' 
-        : 'http://localhost:11434'
-    );
+    // Prepare messages with system prompt
+    const fullMessages: ChatMessage[] = [];
+    if (systemPrompt) {
+      fullMessages.push({ role: 'system', content: systemPrompt });
+    }
+    fullMessages.push(...messages);
 
-    const provider = createProvider({
-      type: providerType,
-      name: providerType,
-      baseUrl,
-    });
-
-    const response = await provider.chat({
-      messages,
-      model,
-      systemPrompt,
-      stream: false,
-    });
+    // Call the appropriate provider directly (server-side, no CORS)
+    let response;
+    if (providerType === 'lmstudio' || providerType === 'openai-compatible') {
+      response = await chatWithLMStudio(fullMessages, model, temperature);
+    } else {
+      response = await chatWithOllama(fullMessages, model, temperature);
+    }
 
     return NextResponse.json({
       content: response.content,
