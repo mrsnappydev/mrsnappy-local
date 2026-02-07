@@ -15,6 +15,8 @@ import MarkdownRenderer from '@/components/MarkdownRenderer';
 import MessageActions from '@/components/MessageActions';
 import ModelHub from '@/components/ModelHub';
 import IntegrationsSettings from '@/components/IntegrationsSettings';
+import ProviderStatusBar from '@/components/ProviderStatusBar';
+import NoProviderPrompt from '@/components/NoProviderPrompt';
 
 export default function Home() {
   const {
@@ -51,6 +53,7 @@ export default function Home() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
+  const [hasCheckedInitialConnection, setHasCheckedInitialConnection] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isModelHubOpen, setIsModelHubOpen] = useState(false);
@@ -98,7 +101,19 @@ export default function Home() {
     } catch {
       setIsConnected(false);
     }
+    setHasCheckedInitialConnection(true);
   };
+
+  // Handle provider ready from NoProviderPrompt
+  const handleProviderReady = useCallback((provider: ProviderType) => {
+    switchProvider(provider);
+    setIsConnected(true);
+  }, [switchProvider]);
+
+  // Handle provider status change from ProviderStatusBar
+  const handleProviderStatusChange = useCallback((connected: boolean) => {
+    setIsConnected(connected);
+  }, []);
 
   // Build request body with provider settings and tool support
   const buildRequestBody = (messagesForApi: { role: string; content: string }[]) => {
@@ -553,6 +568,9 @@ export default function Home() {
     );
   }
 
+  // Show no provider prompt if no provider is connected after initial check
+  const showNoProviderPrompt = hasCheckedInitialConnection && isConnected === false && messages.length === 0;
+
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-100">
       {/* Sidebar */}
@@ -580,43 +598,40 @@ export default function Home() {
               <p className="text-xs text-zinc-500">Local AI Assistant</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            {/* Model & Provider indicator - click to open Model Hub */}
+          <div className="flex items-center gap-3">
+            {/* Provider Status Bar - New Component */}
+            <ProviderStatusBar
+              currentProvider={settings.provider}
+              onSwitchProvider={switchProvider}
+              onProviderStatusChange={handleProviderStatusChange}
+            />
+            
+            {/* Model indicator - click to open Model Hub */}
             <button 
               onClick={() => setIsModelHubOpen(true)}
-              className="text-xs px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded-full text-zinc-400 flex items-center gap-1 transition-colors"
+              className="text-xs px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-zinc-400 flex items-center gap-1 transition-colors border border-zinc-700"
               title="Open Model Hub"
             >
               <Cpu className="w-3 h-3" />
-              <span>{providerEmoji}</span>
-              <span>{settings.model || 'Select model'}</span>
+              <span className="max-w-[120px] truncate">{settings.model || 'Select model'}</span>
             </button>
+            
             {/* Streaming toggle */}
             <button
               onClick={() => updateSettings({ streamingEnabled: !settings.streamingEnabled })}
-              className={`text-xs px-3 py-1.5 rounded-full transition-colors ${
+              className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
                 settings.streamingEnabled 
                   ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
-                  : 'bg-zinc-800 text-zinc-400'
+                  : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
               }`}
             >
-              {settings.streamingEnabled ? '⚡ Streaming' : 'Standard'}
+              {settings.streamingEnabled ? '⚡ Stream' : 'Standard'}
             </button>
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${
-                isConnected === null ? 'bg-zinc-500' :
-                isConnected ? 'bg-green-500' : 'bg-red-500'
-              }`} />
-              <span className="text-xs text-zinc-500">
-                {isConnected === null ? 'Checking...' :
-                 isConnected ? `${providerName} Connected` : `${providerName} Offline`}
-              </span>
-            </div>
             
             {/* Integrations button */}
             <button 
               onClick={() => setIsIntegrationsOpen(true)}
-              className={`p-2 rounded-lg hover:bg-zinc-800 transition-colors ${
+              className={`p-2 rounded-lg hover:bg-zinc-800 transition-colors border border-zinc-700 ${
                 enabledIntegrations.length > 0 ? 'text-purple-400' : 'text-zinc-400'
               }`}
               title={`Integrations (${enabledIntegrations.length} active)`}
@@ -625,14 +640,14 @@ export default function Home() {
             </button>
             <button 
               onClick={handleNewConversation}
-              className="p-2 rounded-lg hover:bg-zinc-800 transition-colors"
+              className="p-2 rounded-lg hover:bg-zinc-800 transition-colors border border-zinc-700"
               title="New chat"
             >
               <RefreshCw className="w-4 h-4 text-zinc-400" />
             </button>
             <button 
               onClick={() => setIsSettingsOpen(true)}
-              className="p-2 rounded-lg hover:bg-zinc-800 transition-colors"
+              className="p-2 rounded-lg hover:bg-zinc-800 transition-colors border border-zinc-700"
               title="Settings"
             >
               <Settings className="w-5 h-5 text-zinc-400" />
@@ -640,9 +655,11 @@ export default function Home() {
           </div>
         </header>
 
-        {/* Messages */}
+        {/* Messages or No Provider Prompt */}
         <div className="flex-1 overflow-y-auto">
-          {messages.length === 0 ? (
+          {showNoProviderPrompt ? (
+            <NoProviderPrompt onProviderReady={handleProviderReady} />
+          ) : messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-4">
               <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center mb-6">
                 <Zap className="w-10 h-10 text-zinc-900" />
