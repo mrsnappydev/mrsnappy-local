@@ -784,9 +784,12 @@ function HuggingfaceTab({
                     : 'border-zinc-700 bg-zinc-800/50'
                 }`}
               >
-                <button
+                <div
                   onClick={() => onSelectModel(model.id)}
-                  className="w-full p-4 text-left"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === 'Enter' && onSelectModel(model.id)}
+                  className="w-full p-4 text-left cursor-pointer"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
@@ -853,7 +856,7 @@ function HuggingfaceTab({
                       {downloadState.status}
                     </div>
                   )}
-                </button>
+                </div>
                 
                 {/* Expanded details */}
                 {isExpanded && (
