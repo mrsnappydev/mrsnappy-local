@@ -11,6 +11,17 @@ import {
   executeGmailSearch,
   executeGmailReply,
 } from './gmail';
+import {
+  calendarTools,
+  executeCalendarListEvents,
+  executeCalendarGetEvent,
+  executeCalendarCreateEvent,
+  executeCalendarUpdateEvent,
+  executeCalendarDeleteEvent,
+  executeCalendarQuickAdd,
+  executeCalendarFindFreeTime,
+  executeCalendarSearch,
+} from './calendar';
 import { projectTools } from './project-files';
 // Note: project tool executors are in project-files-server.ts and called from API routes
 import { IntegrationState } from '../integrations/types';
@@ -20,6 +31,7 @@ const ALL_TOOLS: ToolDefinition[] = [
   webSearchTool,
   imageSearchTool,
   ...gmailTools,
+  ...calendarTools,
   ...projectTools,
   // Add more tools here as we build them
 ];
@@ -72,6 +84,66 @@ const TOOL_EXECUTORS: Record<string, ToolExecutor> = {
     const emailId = args.emailId as string;
     const body = args.body as string;
     return executeGmailReply(emailId, body);
+  },
+  
+  // Calendar Tools
+  'calendar_list_events': async (args) => {
+    const timeFrame = (args.timeFrame as string) || 'week';
+    const startDate = args.startDate as string | undefined;
+    const endDate = args.endDate as string | undefined;
+    const maxResults = (args.maxResults as number) || 10;
+    return executeCalendarListEvents(timeFrame, startDate, endDate, maxResults);
+  },
+  
+  'calendar_get_event': async (args) => {
+    const eventId = args.eventId as string;
+    return executeCalendarGetEvent(eventId);
+  },
+  
+  'calendar_create_event': async (args) => {
+    const summary = args.summary as string;
+    const startTime = args.startTime as string;
+    const endTime = args.endTime as string | undefined;
+    const description = args.description as string | undefined;
+    const location = args.location as string | undefined;
+    const attendees = args.attendees as string | undefined;
+    const isAllDay = (args.isAllDay as boolean) || false;
+    const addMeet = (args.addMeet as boolean) || false;
+    return executeCalendarCreateEvent(summary, startTime, endTime, description, location, attendees, isAllDay, addMeet);
+  },
+  
+  'calendar_update_event': async (args) => {
+    const eventId = args.eventId as string;
+    const summary = args.summary as string | undefined;
+    const startTime = args.startTime as string | undefined;
+    const endTime = args.endTime as string | undefined;
+    const description = args.description as string | undefined;
+    const location = args.location as string | undefined;
+    return executeCalendarUpdateEvent(eventId, summary, startTime, endTime, description, location);
+  },
+  
+  'calendar_delete_event': async (args) => {
+    const eventId = args.eventId as string;
+    return executeCalendarDeleteEvent(eventId);
+  },
+  
+  'calendar_quick_add': async (args) => {
+    const text = args.text as string;
+    return executeCalendarQuickAdd(text);
+  },
+  
+  'calendar_find_free_time': async (args) => {
+    const date = args.date as string | undefined;
+    const daysToSearch = (args.daysToSearch as number) || 7;
+    const minDuration = (args.minDuration as number) || 30;
+    const workingHoursOnly = args.workingHoursOnly !== false;
+    return executeCalendarFindFreeTime(date, daysToSearch, minDuration, workingHoursOnly);
+  },
+  
+  'calendar_search': async (args) => {
+    const query = args.query as string;
+    const maxResults = (args.maxResults as number) || 10;
+    return executeCalendarSearch(query, maxResults);
   },
   
   // Project Tools - these are registered but executed via API route

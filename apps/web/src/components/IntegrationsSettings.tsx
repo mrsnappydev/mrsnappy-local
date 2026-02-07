@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { 
+import {
   X, 
   Check, 
   AlertCircle, 
@@ -18,6 +18,7 @@ import {
   LogOut,
   Mail,
   KeyRound,
+  Calendar,
 } from 'lucide-react';
 import {
   IntegrationType,
@@ -33,6 +34,13 @@ import {
   saveGmailAuth,
   revokeToken,
 } from '@/lib/integrations/gmail';
+import {
+  loadCalendarAuth,
+  clearCalendarAuth,
+  isCalendarConnected,
+  getConnectedCalendarEmail,
+  revokeToken as revokeCalendarToken,
+} from '@/lib/integrations/calendar';
 
 interface IntegrationsSettingsProps {
   isOpen: boolean;
@@ -62,7 +70,7 @@ export default function IntegrationsSettings({
   const [localStates, setLocalStates] = useState<IntegrationState[]>(integrations);
   const [testingIntegration, setTestingIntegration] = useState<IntegrationType | null>(null);
   const [expandedIntegration, setExpandedIntegration] = useState<IntegrationType | null>(null);
-  
+
   // Gmail-specific state
   const [gmailConnecting, setGmailConnecting] = useState(false);
   const [gmailEmail, setGmailEmail] = useState<string | null>(null);
@@ -70,55 +78,97 @@ export default function IntegrationsSettings({
   const [gmailClientId, setGmailClientId] = useState('');
   const [gmailClientSecret, setGmailClientSecret] = useState('');
 
-  // Sync with props and check Gmail status
+  // Calendar-specific state
+  const [calendarConnecting, setCalendarConnecting] = useState(false);
+  const [calendarEmail, setCalendarEmail] = useState<string | null>(null);
+  const [showCalendarCredentials, setShowCalendarCredentials] = useState(false);
+  const [calendarClientId, setCalendarClientId] = useState('');
+  const [calendarClientSecret, setCalendarClientSecret] = useState('');
+
+  // Sync with props and check Gmail/Calendar status
   useEffect(() => {
     setLocalStates(integrations);
-    
+
     // Check if Gmail is connected
     const email = getConnectedEmail();
     setGmailEmail(email);
-    
-    // Update email integration status based on actual connection
-    if (email) {
-      setLocalStates(prev => prev.map(s => 
-        s.type === 'email' 
-          ? { ...s, enabled: true, status: 'connected' as const, metadata: { email } }
-          : s
-      ));
-    }
+
+    // Check if Calendar is connected
+    const calEmail = getConnectedCalendarEmail();
+    setCalendarEmail(calEmail);
+
+    // Update integration statuses based on actual connections
+    setLocalStates(prev => prev.map(s => {
+      if (s.type === 'email' && email) {
+        return { ...s, enabled: true, status: 'connected' as const, metadata: { email } };
+      }
+      if (s.type === 'calendar' && calEmail) {
+        return { ...s, enabled: true, status: 'connected' as const, metadata: { email: calEmail } };
+      }
+      return s;
+    }));
   }, [integrations, isOpen]);
 
-  // Listen for OAuth popup messages
+  // Listen for OAuth popup messages (Gmail and Calendar)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      // Gmail OAuth
       if (event.data?.type === 'gmail-auth-success') {
         setGmailConnecting(false);
         setGmailEmail(event.data.data?.userInfo?.email);
-        
+
         // Update state
-        setLocalStates(prev => prev.map(s => 
-          s.type === 'email' 
-            ? { 
-                ...s, 
-                enabled: true, 
-                status: 'connected' as const, 
+        setLocalStates(prev => prev.map(s =>
+          s.type === 'email'
+            ? {
+                ...s,
+                enabled: true,
+                status: 'connected' as const,
                 metadata: { email: event.data.data?.userInfo?.email },
                 lastChecked: Date.now(),
               }
             : s
         ));
-        
+
         setShowGmailCredentials(false);
       } else if (event.data?.type === 'gmail-auth-error') {
         setGmailConnecting(false);
-        setLocalStates(prev => prev.map(s => 
-          s.type === 'email' 
+        setLocalStates(prev => prev.map(s =>
+          s.type === 'email'
+            ? { ...s, status: 'error' as const, error: event.data.error }
+            : s
+        ));
+      }
+
+      // Calendar OAuth
+      if (event.data?.type === 'calendar-auth-success') {
+        setCalendarConnecting(false);
+        setCalendarEmail(event.data.data?.userInfo?.email);
+
+        // Update state
+        setLocalStates(prev => prev.map(s =>
+          s.type === 'calendar'
+            ? {
+                ...s,
+                enabled: true,
+                status: 'connected' as const,
+                metadata: { email: event.data.data?.userInfo?.email },
+                lastChecked: Date.now(),
+              }
+            : s
+        ));
+
+        setShowCalendarCredentials(false);
+      } else if (event.data?.type === 'calendar-auth-error') {
+        setCalendarConnecting(false);
+        setLocalStates(prev => prev.map(s =>
+          s.type === 'calendar'
             ? { ...s, status: 'error' as const, error: event.data.error }
             : s
         ));
       }
     };
-    
+
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, []);
@@ -144,7 +194,7 @@ export default function IntegrationsSettings({
   const toggleIntegration = async (type: IntegrationType) => {
     const state = getState(type);
     const config = INTEGRATIONS[type];
-    
+
     // Special handling for Gmail
     if (type === 'email') {
       if (state.enabled) {
@@ -157,9 +207,22 @@ export default function IntegrationsSettings({
         return;
       }
     }
-    
+
+    // Special handling for Calendar
+    if (type === 'calendar') {
+      if (state.enabled) {
+        // Disconnecting - handled by disconnect button
+        return;
+      } else {
+        // Connecting - show credentials or start OAuth
+        setShowCalendarCredentials(true);
+        setExpandedIntegration('calendar');
+        return;
+      }
+    }
+
     const newEnabled = !state.enabled;
-    updateState(type, { 
+    updateState(type, {
       enabled: newEnabled,
       status: newEnabled ? 'connected' : 'disconnected',
     });
@@ -169,9 +232,9 @@ export default function IntegrationsSettings({
     if (!gmailClientId || !gmailClientSecret) {
       return;
     }
-    
+
     setGmailConnecting(true);
-    
+
     try {
       // Get auth URL from API
       const response = await fetch('/api/auth/gmail', {
@@ -182,53 +245,53 @@ export default function IntegrationsSettings({
           client_secret: gmailClientSecret,
         }),
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.message || 'Failed to start OAuth');
       }
-      
+
       const { authUrl } = await response.json();
-      
+
       // Open OAuth popup
       const width = 600;
       const height = 700;
       const left = window.screenX + (window.outerWidth - width) / 2;
       const top = window.screenY + (window.outerHeight - height) / 2;
-      
+
       const popup = window.open(
         authUrl,
         'gmail-oauth',
         `width=${width},height=${height},left=${left},top=${top},popup=1`
       );
-      
+
       if (!popup) {
         throw new Error('Popup blocked - please allow popups for this site');
       }
-      
+
       // Poll for popup closure (fallback if message fails)
       const pollTimer = setInterval(() => {
         if (popup.closed) {
           clearInterval(pollTimer);
           setGmailConnecting(false);
-          
+
           // Check if we got connected
           const email = getConnectedEmail();
           if (email) {
             setGmailEmail(email);
-            setLocalStates(prev => prev.map(s => 
-              s.type === 'email' 
+            setLocalStates(prev => prev.map(s =>
+              s.type === 'email'
                 ? { ...s, enabled: true, status: 'connected' as const, metadata: { email } }
                 : s
             ));
           }
         }
       }, 500);
-      
+
     } catch (error) {
       setGmailConnecting(false);
-      updateState('email', { 
-        status: 'error', 
+      updateState('email', {
+        status: 'error',
         error: error instanceof Error ? error.message : 'Connection failed',
       });
     }
@@ -236,7 +299,7 @@ export default function IntegrationsSettings({
 
   const disconnectGmail = useCallback(async () => {
     const auth = loadGmailAuth();
-    
+
     if (auth?.tokens?.access_token) {
       try {
         await revokeToken(auth.tokens.access_token);
@@ -244,13 +307,106 @@ export default function IntegrationsSettings({
         // Continue with local cleanup even if revoke fails
       }
     }
-    
+
     clearGmailAuth();
     setGmailEmail(null);
     setGmailClientId('');
     setGmailClientSecret('');
-    
+
     updateState('email', {
+      enabled: false,
+      status: 'disconnected',
+      metadata: undefined,
+      error: undefined,
+    });
+  }, []);
+
+  const connectCalendar = useCallback(async () => {
+    if (!calendarClientId || !calendarClientSecret) {
+      return;
+    }
+
+    setCalendarConnecting(true);
+
+    try {
+      // Get auth URL from API
+      const response = await fetch('/api/auth/calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: calendarClientId,
+          client_secret: calendarClientSecret,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to start OAuth');
+      }
+
+      const { authUrl } = await response.json();
+
+      // Open OAuth popup
+      const width = 600;
+      const height = 700;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+
+      const popup = window.open(
+        authUrl,
+        'calendar-oauth',
+        `width=${width},height=${height},left=${left},top=${top},popup=1`
+      );
+
+      if (!popup) {
+        throw new Error('Popup blocked - please allow popups for this site');
+      }
+
+      // Poll for popup closure (fallback if message fails)
+      const pollTimer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(pollTimer);
+          setCalendarConnecting(false);
+
+          // Check if we got connected
+          const email = getConnectedCalendarEmail();
+          if (email) {
+            setCalendarEmail(email);
+            setLocalStates(prev => prev.map(s =>
+              s.type === 'calendar'
+                ? { ...s, enabled: true, status: 'connected' as const, metadata: { email } }
+                : s
+            ));
+          }
+        }
+      }, 500);
+
+    } catch (error) {
+      setCalendarConnecting(false);
+      updateState('calendar', {
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Connection failed',
+      });
+    }
+  }, [calendarClientId, calendarClientSecret]);
+
+  const disconnectCalendar = useCallback(async () => {
+    const auth = loadCalendarAuth();
+
+    if (auth?.tokens?.access_token) {
+      try {
+        await revokeCalendarToken(auth.tokens.access_token);
+      } catch {
+        // Continue with local cleanup even if revoke fails
+      }
+    }
+
+    clearCalendarAuth();
+    setCalendarEmail(null);
+    setCalendarClientId('');
+    setCalendarClientSecret('');
+
+    updateState('calendar', {
       enabled: false,
       status: 'disconnected',
       metadata: undefined,
@@ -260,13 +416,20 @@ export default function IntegrationsSettings({
 
   const testIntegration = async (type: IntegrationType) => {
     setTestingIntegration(type);
-    
+
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
+
     if (type === 'web-search') {
       updateState(type, { status: 'connected', lastChecked: Date.now() });
     } else if (type === 'email') {
       const email = getConnectedEmail();
+      if (email) {
+        updateState(type, { status: 'connected', lastChecked: Date.now() });
+      } else {
+        updateState(type, { status: 'disconnected' });
+      }
+    } else if (type === 'calendar') {
+      const email = getConnectedCalendarEmail();
       if (email) {
         updateState(type, { status: 'connected', lastChecked: Date.now() });
       } else {
@@ -280,7 +443,7 @@ export default function IntegrationsSettings({
         updateState(type, { status: 'connected', lastChecked: Date.now() });
       }
     }
-    
+
     setTestingIntegration(null);
   };
 
@@ -332,11 +495,11 @@ export default function IntegrationsSettings({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div 
+      <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={onClose}
       />
-      
+
       {/* Modal */}
       <div className="relative w-full max-w-2xl mx-4 bg-zinc-900 rounded-2xl border border-zinc-800 shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
@@ -380,13 +543,14 @@ export default function IntegrationsSettings({
               const isExpanded = expandedIntegration === config.type;
               const isTesting = testingIntegration === config.type;
               const isEmail = config.type === 'email';
-              
+              const isCalendar = config.type === 'calendar';
+
               return (
                 <div
                   key={config.type}
                   className={`rounded-xl border transition-all ${
-                    state.enabled 
-                      ? 'border-purple-500/50 bg-purple-500/5' 
+                    state.enabled
+                      ? 'border-purple-500/50 bg-purple-500/5'
                       : 'border-zinc-800 bg-zinc-800/30'
                   }`}
                 >
@@ -398,7 +562,7 @@ export default function IntegrationsSettings({
                     }`}>
                       {config.icon}
                     </div>
-                    
+
                     {/* Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -419,13 +583,15 @@ export default function IntegrationsSettings({
                         )}
                       </div>
                       <p className="text-sm text-zinc-500 truncate">
-                        {isEmail && gmailEmail 
+                        {isEmail && gmailEmail
                           ? `Connected: ${gmailEmail}`
-                          : config.description
+                          : isCalendar && calendarEmail
+                            ? `Connected: ${calendarEmail}`
+                            : config.description
                         }
                       </p>
                     </div>
-                    
+
                     {/* Toggle & Expand */}
                     <div className="flex items-center gap-2">
                       {/* Test button */}
@@ -443,8 +609,8 @@ export default function IntegrationsSettings({
                           )}
                         </button>
                       )}
-                      
-                      {/* Toggle - different for email */}
+
+                      {/* Toggle - different for email and calendar */}
                       {isEmail ? (
                         gmailEmail ? (
                           <button
@@ -467,6 +633,28 @@ export default function IntegrationsSettings({
                             Connect
                           </button>
                         )
+                      ) : isCalendar ? (
+                        calendarEmail ? (
+                          <button
+                            onClick={disconnectCalendar}
+                            className="flex items-center gap-1.5 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                            title="Disconnect Calendar"
+                          >
+                            <LogOut className="w-3.5 h-3.5" />
+                            Disconnect
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setShowCalendarCredentials(true);
+                              setExpandedIntegration('calendar');
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 rounded-lg transition-colors"
+                          >
+                            <Calendar className="w-3.5 h-3.5" />
+                            Connect
+                          </button>
+                        )
                       ) : (
                         <button
                           onClick={() => toggleIntegration(config.type)}
@@ -481,7 +669,7 @@ export default function IntegrationsSettings({
                           )}
                         </button>
                       )}
-                      
+
                       {/* Expand */}
                       <button
                         onClick={() => setExpandedIntegration(isExpanded ? null : config.type)}
@@ -493,7 +681,7 @@ export default function IntegrationsSettings({
                       </button>
                     </div>
                   </div>
-                  
+
                   {/* Expanded Details */}
                   {isExpanded && (
                     <div className="px-4 pb-4 pt-0 border-t border-zinc-800 mt-0">
@@ -505,12 +693,12 @@ export default function IntegrationsSettings({
                               <KeyRound className="w-4 h-4" />
                               Enter your Google OAuth credentials
                             </div>
-                            
+
                             <p className="text-xs text-zinc-500">
-                              You need to create OAuth credentials in the Google Cloud Console. 
+                              You need to create OAuth credentials in the Google Cloud Console.
                               Click "Setup Guide" below for instructions.
                             </p>
-                            
+
                             <div className="space-y-3">
                               <div>
                                 <label className="block text-xs font-medium text-zinc-400 mb-1.5">
@@ -524,7 +712,7 @@ export default function IntegrationsSettings({
                                   className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-purple-500"
                                 />
                               </div>
-                              
+
                               <div>
                                 <label className="block text-xs font-medium text-zinc-400 mb-1.5">
                                   Client Secret
@@ -538,7 +726,7 @@ export default function IntegrationsSettings({
                                 />
                               </div>
                             </div>
-                            
+
                             <button
                               onClick={connectGmail}
                               disabled={!gmailClientId || !gmailClientSecret || gmailConnecting}
@@ -559,6 +747,67 @@ export default function IntegrationsSettings({
                           </div>
                         )}
                         
+                        {/* Calendar credentials input */}
+                        {isCalendar && showCalendarCredentials && !calendarEmail && (
+                          <div className="p-4 bg-zinc-800/50 rounded-lg border border-zinc-700 space-y-4">
+                            <div className="flex items-center gap-2 text-sm font-medium text-zinc-300">
+                              <KeyRound className="w-4 h-4" />
+                              Enter your Google OAuth credentials
+                            </div>
+                            
+                            <p className="text-xs text-zinc-500">
+                              You need to create OAuth credentials in the Google Cloud Console with Calendar API enabled. 
+                              Click "Setup Guide" below for instructions.
+                            </p>
+                            
+                            <div className="space-y-3">
+                              <div>
+                                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                                  Client ID
+                                </label>
+                                <input
+                                  type="text"
+                                  value={calendarClientId}
+                                  onChange={(e) => setCalendarClientId(e.target.value)}
+                                  placeholder="xxx.apps.googleusercontent.com"
+                                  className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-purple-500"
+                                />
+                              </div>
+                              
+                              <div>
+                                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                                  Client Secret
+                                </label>
+                                <input
+                                  type="password"
+                                  value={calendarClientSecret}
+                                  onChange={(e) => setCalendarClientSecret(e.target.value)}
+                                  placeholder="GOCSPX-..."
+                                  className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-purple-500"
+                                />
+                              </div>
+                            </div>
+                            
+                            <button
+                              onClick={connectCalendar}
+                              disabled={!calendarClientId || !calendarClientSecret || calendarConnecting}
+                              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-500 hover:bg-purple-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-medium rounded-lg transition-colors"
+                            >
+                              {calendarConnecting ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  Connecting...
+                                </>
+                              ) : (
+                                <>
+                                  <Calendar className="w-4 h-4" />
+                                  Connect with Google
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
+
                         {/* Capabilities */}
                         {config.scopes && config.scopes.length > 0 && (
                           <div>
@@ -577,9 +826,9 @@ export default function IntegrationsSettings({
                             </div>
                           </div>
                         )}
-                        
+
                         {/* Requirements */}
-                        {(config.requiresOAuth || config.requiresApiKey) && !gmailEmail && (
+                        {(config.requiresOAuth || config.requiresApiKey) && !gmailEmail && !calendarEmail && (
                           <div>
                             <h4 className="text-xs font-medium text-zinc-400 mb-2 uppercase tracking-wider">
                               Requirements
@@ -600,7 +849,7 @@ export default function IntegrationsSettings({
                             </div>
                           </div>
                         )}
-                        
+
                         {/* Setup Guide & Links */}
                         <div className="flex flex-wrap items-center gap-3">
                           {onOpenHelp && (
@@ -627,7 +876,7 @@ export default function IntegrationsSettings({
                             </a>
                           )}
                         </div>
-                        
+
                         {/* API Key input for non-OAuth integrations */}
                         {config.requiresApiKey && !config.requiresOAuth && state.enabled && (
                           <div>
@@ -641,7 +890,7 @@ export default function IntegrationsSettings({
                             />
                           </div>
                         )}
-                        
+
                         {/* Status info */}
                         {state.lastChecked && (
                           <p className="text-xs text-zinc-600">

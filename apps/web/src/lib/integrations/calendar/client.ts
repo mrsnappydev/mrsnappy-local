@@ -285,7 +285,10 @@ export async function createEvent(
   }
   
   if (draft.reminders) {
-    eventData.reminders = draft.reminders;
+    eventData.reminders = {
+      useDefault: draft.reminders.useDefault ?? true,
+      overrides: draft.reminders.overrides,
+    };
   }
   
   if (draft.recurrence) {
