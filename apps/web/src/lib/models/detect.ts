@@ -227,8 +227,44 @@ export async function detectOllamaModels(customPath?: string): Promise<Detection
     const manifestsPath = join(ollamaPath, 'manifests');
     const blobsPath = join(ollamaPath, 'blobs');
     
+    // First, check for raw GGUF files directly in the models folder
+    // Some users store GGUF files directly here
+    const rawGgufFiles = await findGGUFFiles(ollamaPath);
+    
+    // Filter out files in subdirectories (we'll handle manifests separately)
+    const directGgufFiles = rawGgufFiles.filter(f => {
+      const relativePath = f.path.replace(ollamaPath, '');
+      const parts = relativePath.split('/').filter(Boolean);
+      return parts.length === 1; // Only files directly in the models folder
+    });
+    
+    // Add raw GGUF files as models
+    for (const { path: filePath, stat } of directGgufFiles) {
+      const filename = basename(filePath);
+      const displayName = filename.replace('.gguf', '');
+      
+      const existingModel: ExistingModel = {
+        name: filename,
+        displayName,
+        path: filePath,
+        size: stat.size,
+        provider: 'ollama',
+        format: detectFormat(filename),
+        quantization: extractQuantization(filename),
+        parameters: extractParameters(filename),
+        lastModified: stat.mtimeMs,
+      };
+      
+      result.models.push(existingModel);
+      result.totalSize += stat.size;
+    }
+    
+    // Then check for traditional manifest structure
     if (!(await directoryExists(manifestsPath))) {
-      result.error = 'No manifests directory found';
+      // No manifests, but we may have found raw GGUF files above
+      if (result.models.length === 0) {
+        result.error = 'No models found (no manifests directory and no GGUF files)';
+      }
       return result;
     }
     
