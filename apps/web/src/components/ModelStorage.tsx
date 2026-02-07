@@ -12,8 +12,12 @@ import {
   FolderOpen,
   Import,
   X,
+  FolderSymlink,
+  Settings,
 } from 'lucide-react';
 import { formatBytes } from '@/lib/models/types';
+import ImportExistingModels from './ImportExistingModels';
+import ConfigureProviderStorage from './ConfigureProviderStorage';
 
 // Types for storage API responses
 interface StoredModel {
@@ -25,7 +29,7 @@ interface StoredModel {
   quantization?: string;
   parameters?: string;
   downloadedAt: number;
-  source: 'huggingface' | 'ollama' | 'manual';
+  source: 'huggingface' | 'ollama' | 'lmstudio' | 'manual';
   sourceUrl?: string;
   hfRepo?: string;
   importedTo: ('ollama' | 'lmstudio')[];
@@ -58,11 +62,15 @@ interface ImportProvidersStatus {
   };
 }
 
+type StorageTab = 'models' | 'import' | 'configure';
+
 interface ModelStorageProps {
   onRefreshNeeded?: () => void;
+  initialTab?: StorageTab;
 }
 
-export default function ModelStorage({ onRefreshNeeded }: ModelStorageProps) {
+export default function ModelStorage({ onRefreshNeeded, initialTab = 'models' }: ModelStorageProps) {
+  const [activeTab, setActiveTab] = useState<StorageTab>(initialTab);
   const [data, setData] = useState<StorageResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -193,35 +201,76 @@ export default function ModelStorage({ onRefreshNeeded }: ModelStorageProps) {
     setDeletingModel(null);
   };
 
-  if (isLoading && !data) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
-      </div>
-    );
-  }
+  // Handle import complete - refresh storage and switch to models tab
+  const handleImportComplete = () => {
+    fetchStorage(true);
+    setActiveTab('models');
+    onRefreshNeeded?.();
+  };
 
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64 gap-4">
-        <AlertCircle className="w-12 h-12 text-red-500" />
-        <p className="text-zinc-400">{error}</p>
-        <button
-          onClick={() => fetchStorage(true)}
-          className="px-4 py-2 bg-amber-500 text-zinc-900 rounded-lg font-medium hover:bg-amber-400"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
+  // Handle config change - refresh storage
+  const handleConfigChange = () => {
+    fetchStorage(true);
+    onRefreshNeeded?.();
+  };
 
-  if (!data) return null;
+  const stats = data?.stats;
+  const models = data?.models || [];
 
-  const { models, stats } = data;
+  // Tab button component
+  const TabButton = ({ tab, icon: Icon, label }: { tab: StorageTab; icon: any; label: string }) => (
+    <button
+      onClick={() => setActiveTab(tab)}
+      className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+        activeTab === tab
+          ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30'
+          : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+      }`}
+    >
+      <Icon className="w-4 h-4" />
+      {label}
+    </button>
+  );
 
   return (
     <div className="p-4 space-y-4">
+      {/* Tab Navigation */}
+      <div className="flex items-center gap-2 pb-2 border-b border-zinc-800">
+        <TabButton tab="models" icon={HardDrive} label="Models" />
+        <TabButton tab="import" icon={Import} label="Import Existing" />
+        <TabButton tab="configure" icon={FolderSymlink} label="Configure Storage" />
+      </div>
+
+      {/* Import Existing Tab */}
+      {activeTab === 'import' && (
+        <ImportExistingModels onImportComplete={handleImportComplete} />
+      )}
+
+      {/* Configure Storage Tab */}
+      {activeTab === 'configure' && (
+        <ConfigureProviderStorage onConfigChange={handleConfigChange} />
+      )}
+
+      {/* Models Tab - Original Content */}
+      {activeTab === 'models' && (
+        <>
+          {isLoading && !data ? (
+            <div className="flex items-center justify-center h-64">
+              <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+            </div>
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center h-64 gap-4">
+              <AlertCircle className="w-12 h-12 text-red-500" />
+              <p className="text-zinc-400">{error}</p>
+              <button
+                onClick={() => fetchStorage(true)}
+                className="px-4 py-2 bg-amber-500 text-zinc-900 rounded-lg font-medium hover:bg-amber-400"
+              >
+                Retry
+              </button>
+            </div>
+          ) : (
+            <>
       {/* Storage Stats Header */}
       <div className="flex items-center justify-between p-4 bg-zinc-800/50 rounded-lg">
         <div className="flex items-center gap-4">
@@ -230,17 +279,17 @@ export default function ModelStorage({ onRefreshNeeded }: ModelStorageProps) {
           </div>
           <div>
             <h3 className="font-medium text-zinc-200">Central Model Storage</h3>
-            <p className="text-xs text-zinc-500 truncate max-w-md" title={stats.storagePath}>
-              {stats.storagePath}
+            <p className="text-xs text-zinc-500 truncate max-w-md" title={stats?.storagePath}>
+              {stats?.storagePath}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
             <p className="text-sm font-medium text-zinc-200">
-              {stats.totalModels} model{stats.totalModels !== 1 ? 's' : ''}
+              {stats?.totalModels || 0} model{stats?.totalModels !== 1 ? 's' : ''}
             </p>
-            <p className="text-xs text-zinc-500">{formatBytes(stats.totalSize)} total</p>
+            <p className="text-xs text-zinc-500">{formatBytes(stats?.totalSize || 0)} total</p>
           </div>
           <button
             onClick={() => fetchStorage(true)}
@@ -460,6 +509,10 @@ export default function ModelStorage({ onRefreshNeeded }: ModelStorageProps) {
           to both Ollama and LM Studio. This saves disk space by avoiding duplicate downloads.
         </p>
       </div>
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }

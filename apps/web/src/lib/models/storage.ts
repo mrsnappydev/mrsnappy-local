@@ -19,7 +19,7 @@ export interface StoredModel {
   quantization?: string;
   parameters?: string;
   downloadedAt: number;
-  source: 'huggingface' | 'ollama' | 'manual';
+  source: 'huggingface' | 'ollama' | 'lmstudio' | 'manual';
   sourceUrl?: string;
   hfRepo?: string;
   hfFile?: string;
