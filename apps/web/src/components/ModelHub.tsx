@@ -19,10 +19,14 @@ import {
   Filter,
   ChevronDown,
 } from 'lucide-react';
-import { UnifiedModel, formatBytes, HuggingFaceModel } from '@/lib/models';
+import { UnifiedModel, formatBytes, HuggingFaceModel, ModelCapability, CAPABILITY_FILTERS, getModelCapabilities, getModelMetadata } from '@/lib/models';
 import { ProviderType } from '@/lib/providers';
 import { RegistryState, ProviderState } from '@/lib/models/registry';
 import { formatModelForDisplay, getRecommendedFile, GGUFFileInfo } from '@/lib/models/huggingface';
+import CapabilityBadge, { CapabilityBadges } from './CapabilityBadge';
+import ModelRecommendations from './ModelRecommendations';
+import { BestForText } from './ModelCapabilities';
+import ModelStorage from './ModelStorage';
 
 interface ModelHubProps {
   isOpen: boolean;
@@ -32,8 +36,9 @@ interface ModelHubProps {
   onSelectModel: (modelId: string, provider: ProviderType) => void;
 }
 
-type TabType = 'local' | 'huggingface';
+type TabType = 'local' | 'storage' | 'huggingface';
 type FilterType = 'all' | 'ollama' | 'lmstudio';
+type CapabilityFilterType = ModelCapability | 'all';
 
 interface DownloadState {
   modelId: string;
@@ -55,6 +60,7 @@ export default function ModelHub({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filterProvider, setFilterProvider] = useState<FilterType>('all');
+  const [filterCapability, setFilterCapability] = useState<CapabilityFilterType>('all');
   const [searchQuery, setSearchQuery] = useState('');
   
   // Huggingface state
@@ -260,6 +266,12 @@ export default function ModelHub({
     if (filterProvider === 'ollama' && !model.compatibility.ollama) return false;
     if (filterProvider === 'lmstudio' && !model.compatibility.lmstudio) return false;
     
+    // Capability filter
+    if (filterCapability !== 'all') {
+      const modelCapabilities = getModelCapabilities(model.id);
+      if (!modelCapabilities.includes(filterCapability)) return false;
+    }
+    
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -318,6 +330,17 @@ export default function ModelHub({
             )}
           </button>
           <button
+            onClick={() => setActiveTab('storage')}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'storage'
+                ? 'text-amber-500 border-b-2 border-amber-500'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Server className="w-4 h-4 inline mr-2" />
+            Central Storage
+          </button>
+          <button
             onClick={() => setActiveTab('huggingface')}
             className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
               activeTab === 'huggingface'
@@ -332,7 +355,7 @@ export default function ModelHub({
         
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
-          {activeTab === 'local' ? (
+          {activeTab === 'local' && (
             <LocalModelsTab
               registry={registry}
               filteredModels={filteredModels}
@@ -341,13 +364,19 @@ export default function ModelHub({
               currentModel={currentModel}
               currentProvider={currentProvider}
               filterProvider={filterProvider}
+              filterCapability={filterCapability}
               searchQuery={searchQuery}
               onFilterChange={setFilterProvider}
+              onCapabilityFilterChange={setFilterCapability}
               onSearchChange={setSearchQuery}
               onSelectModel={handleSelectLocalModel}
               onRefresh={fetchRegistry}
             />
-          ) : (
+          )}
+          {activeTab === 'storage' && (
+            <ModelStorage onRefreshNeeded={fetchRegistry} />
+          )}
+          {activeTab === 'huggingface' && (
             <HuggingfaceTab
               query={hfQuery}
               onQueryChange={setHfQuery}
@@ -378,8 +407,10 @@ function LocalModelsTab({
   currentModel,
   currentProvider,
   filterProvider,
+  filterCapability,
   searchQuery,
   onFilterChange,
+  onCapabilityFilterChange,
   onSearchChange,
   onSelectModel,
   onRefresh,
@@ -391,8 +422,10 @@ function LocalModelsTab({
   currentModel?: string;
   currentProvider: ProviderType;
   filterProvider: FilterType;
+  filterCapability: CapabilityFilterType;
   searchQuery: string;
   onFilterChange: (filter: FilterType) => void;
+  onCapabilityFilterChange: (filter: CapabilityFilterType) => void;
   onSearchChange: (query: string) => void;
   onSelectModel: (model: UnifiedModel) => void;
   onRefresh: () => void;
@@ -488,17 +521,45 @@ function LocalModelsTab({
         </div>
       </div>
       
+      {/* Capability Filter Chips */}
+      <div className="flex flex-wrap gap-2">
+        {CAPABILITY_FILTERS.map((filter) => (
+          <button
+            key={filter.id}
+            onClick={() => onCapabilityFilterChange(filter.id)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+              filterCapability === filter.id
+                ? 'bg-amber-500 text-zinc-900'
+                : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+            }`}
+          >
+            {filter.icon} {filter.label}
+          </button>
+        ))}
+      </div>
+      
+      {/* Model Recommendations - show when browsing all or filtering by capability */}
+      {!searchQuery && filteredModels.length > 0 && (
+        <ModelRecommendations 
+          currentCapabilityFilter={filterCapability}
+          onSelectModel={(modelKey) => {
+            // Search for this model
+            onSearchChange(modelKey);
+          }}
+        />
+      )}
+      
       {/* Model List */}
       {filteredModels.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <HardDrive className="w-12 h-12 text-zinc-600 mb-4" />
           <p className="text-zinc-400 mb-2">
-            {searchQuery || filterProvider !== 'all' 
+            {searchQuery || filterProvider !== 'all' || filterCapability !== 'all'
               ? 'No models match your filters' 
               : 'No models found'}
           </p>
           <p className="text-sm text-zinc-500">
-            {searchQuery || filterProvider !== 'all'
+            {searchQuery || filterProvider !== 'all' || filterCapability !== 'all'
               ? 'Try adjusting your search or filters'
               : 'Start a provider and download some models'}
           </p>
@@ -536,6 +597,10 @@ function ModelCard({
     (currentProvider === 'ollama' && model.compatibility.ollama) ||
     (currentProvider === 'lmstudio' && model.compatibility.lmstudio);
   
+  // Get capabilities for this model
+  const capabilities = getModelCapabilities(model.id);
+  const metadata = getModelMetadata(model.id);
+  
   return (
     <button
       onClick={onSelect}
@@ -562,7 +627,13 @@ function ModelCard({
               </span>
             )}
           </div>
-          <p className="text-xs text-zinc-500 truncate">{model.id}</p>
+          <div className="flex items-center gap-2 mb-1">
+            <p className="text-xs text-zinc-500 truncate">{model.id}</p>
+          </div>
+          {/* Capability badges */}
+          <div className="flex items-center gap-1 mt-2">
+            <CapabilityBadges capabilities={capabilities} compact maxVisible={4} />
+          </div>
         </div>
         
         <div className="flex flex-col items-end gap-1.5">
