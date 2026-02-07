@@ -508,6 +508,311 @@ ollama create mymodel -f Modelfile`} />
           </div>
         ),
       },
+      {
+        id: 'central-storage',
+        title: 'Central Model Storage',
+        keywords: ['central', 'storage', 'organize', 'folder', 'disk', 'space', 'save'],
+        content: (
+          <div className="space-y-4">
+            <p>
+              Central Model Storage keeps all your AI models in <strong className="text-zinc-200">one organized location</strong>, 
+              eliminating duplicates and saving disk space.
+            </p>
+            
+            <h4 className="font-semibold text-zinc-200 mt-6">Why Use Central Storage?</h4>
+            <ul className="space-y-2">
+              <li className="flex gap-2">
+                <span>💾</span>
+                <span><strong className="text-zinc-200">Save Disk Space</strong> - No duplicate models across providers</span>
+              </li>
+              <li className="flex gap-2">
+                <span>📦</span>
+                <span><strong className="text-zinc-200">One Location</strong> - All models in ~/MrSnappy-Models/</span>
+              </li>
+              <li className="flex gap-2">
+                <span>🔄</span>
+                <span><strong className="text-zinc-200">Use Anywhere</strong> - Import to Ollama, LM Studio, or both</span>
+              </li>
+              <li className="flex gap-2">
+                <span>📋</span>
+                <span><strong className="text-zinc-200">Easy Backup</strong> - One folder to backup and migrate</span>
+              </li>
+            </ul>
+            
+            <h4 className="font-semibold text-zinc-200 mt-6">How It Works:</h4>
+            <ol className="space-y-2 text-zinc-400 list-decimal list-inside">
+              <li>Models download to <code className="text-amber-400">~/MrSnappy-Models/</code></li>
+              <li>A registry tracks metadata (size, format, capabilities)</li>
+              <li>You import models to Ollama or LM Studio when needed</li>
+              <li>Imports use symlinks to avoid copying files</li>
+            </ol>
+            
+            <Callout type="tip">
+              <strong>Download once, use everywhere!</strong> A single 8GB model file 
+              can be used by both Ollama and LM Studio without doubling disk usage.
+            </Callout>
+          </div>
+        ),
+      },
+      {
+        id: 'import-existing',
+        title: 'Import Existing Models',
+        keywords: ['import', 'existing', 'ollama', 'lmstudio', 'migrate', 'move'],
+        content: (
+          <div className="space-y-4">
+            <p>
+              Already have models downloaded in Ollama or LM Studio? Import them into 
+              Central Storage to consolidate everything.
+            </p>
+            
+            <h4 className="font-semibold text-zinc-200 mt-6">How to Import:</h4>
+            <Steps steps={[
+              'Click the model name in the header to open Model Hub',
+              'Go to the "Central Storage" tab',
+              'Click the "Import Existing" sub-tab',
+              'Click "Scan for Models" button',
+              'MrSnappy scans Ollama and LM Studio directories',
+              'Select the models you want to import',
+              'Optionally check "Delete original after import" to save space',
+              'Click "Import Selected"',
+            ]} />
+            
+            <h4 className="font-semibold text-zinc-200 mt-6">Where MrSnappy Looks:</h4>
+            <div className="space-y-2 mt-3 text-sm">
+              <div className="p-3 bg-zinc-800/50 rounded-lg">
+                <p className="font-medium text-zinc-200">🦙 Ollama</p>
+                <code className="text-xs text-amber-400">~/.ollama/models/</code>
+              </div>
+              <div className="p-3 bg-zinc-800/50 rounded-lg">
+                <p className="font-medium text-zinc-200">🎛️ LM Studio</p>
+                <code className="text-xs text-amber-400">~/.lmstudio/models/</code>
+                <span className="text-zinc-500 text-xs block mt-1">or ~/.cache/lm-studio/models/</span>
+              </div>
+            </div>
+            
+            <Callout type="info">
+              The "Delete original after import" option only deletes after verifying 
+              the copy succeeded. Your models are safe!
+            </Callout>
+          </div>
+        ),
+      },
+      {
+        id: 'download-huggingface',
+        title: 'Download from Huggingface',
+        keywords: ['download', 'huggingface', 'gguf', 'new', 'model'],
+        content: (
+          <div className="space-y-4">
+            <p>
+              Download GGUF models directly from Huggingface into Central Storage.
+            </p>
+            
+            <h4 className="font-semibold text-zinc-200 mt-6">How to Download:</h4>
+            <Steps steps={[
+              'Open Model Hub (click model name in header)',
+              'Go to the "Huggingface" tab',
+              'Search for a model (e.g., "llama 3.2", "mistral", "phi")',
+              'Click on a model to see available GGUF files',
+              'Click "Download" on the version you want',
+              'Wait for download to complete (progress shown)',
+              'Model appears in Central Storage!',
+            ]} />
+            
+            <h4 className="font-semibold text-zinc-200 mt-6">Choosing a Quantization:</h4>
+            <p className="text-zinc-400">Models come in different quantization levels (Q4, Q5, Q8, etc.):</p>
+            <div className="overflow-x-auto mt-3">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-700">
+                    <th className="text-left py-2 text-zinc-400">Quantization</th>
+                    <th className="text-left py-2 text-zinc-400">Size</th>
+                    <th className="text-left py-2 text-zinc-400">Quality</th>
+                  </tr>
+                </thead>
+                <tbody className="text-zinc-300">
+                  <tr className="border-b border-zinc-800">
+                    <td className="py-2">Q4_K_M</td>
+                    <td className="py-2">Smallest</td>
+                    <td className="py-2">Good (recommended)</td>
+                  </tr>
+                  <tr className="border-b border-zinc-800">
+                    <td className="py-2">Q5_K_M</td>
+                    <td className="py-2">Medium</td>
+                    <td className="py-2">Better</td>
+                  </tr>
+                  <tr className="border-b border-zinc-800">
+                    <td className="py-2">Q6_K</td>
+                    <td className="py-2">Larger</td>
+                    <td className="py-2">Very Good</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2">Q8_0</td>
+                    <td className="py-2">Largest</td>
+                    <td className="py-2">Best (near original)</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            
+            <Callout type="tip">
+              <strong>Start with Q4_K_M</strong> - it's the sweet spot of size and quality 
+              for most users. Only go higher if you have plenty of RAM/VRAM.
+            </Callout>
+          </div>
+        ),
+      },
+      {
+        id: 'model-capabilities',
+        title: 'Model Capabilities',
+        keywords: ['capabilities', 'coding', 'vision', 'creative', 'best', 'recommend'],
+        content: (
+          <div className="space-y-4">
+            <p>
+              Models have different strengths. MrSnappy shows capability badges 
+              so you can pick the right model for your task.
+            </p>
+            
+            <h4 className="font-semibold text-zinc-200 mt-6">Capability Badges:</h4>
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <div className="p-2 bg-zinc-800/50 rounded flex items-center gap-2">
+                <span>💻</span>
+                <span className="text-sm text-zinc-300">Coding</span>
+              </div>
+              <div className="p-2 bg-zinc-800/50 rounded flex items-center gap-2">
+                <span>👁️</span>
+                <span className="text-sm text-zinc-300">Vision (images)</span>
+              </div>
+              <div className="p-2 bg-zinc-800/50 rounded flex items-center gap-2">
+                <span>✍️</span>
+                <span className="text-sm text-zinc-300">Creative</span>
+              </div>
+              <div className="p-2 bg-zinc-800/50 rounded flex items-center gap-2">
+                <span>🧮</span>
+                <span className="text-sm text-zinc-300">Reasoning</span>
+              </div>
+              <div className="p-2 bg-zinc-800/50 rounded flex items-center gap-2">
+                <span>⚡</span>
+                <span className="text-sm text-zinc-300">Fast</span>
+              </div>
+              <div className="p-2 bg-zinc-800/50 rounded flex items-center gap-2">
+                <span>📱</span>
+                <span className="text-sm text-zinc-300">Small (low RAM)</span>
+              </div>
+              <div className="p-2 bg-zinc-800/50 rounded flex items-center gap-2">
+                <span>🌍</span>
+                <span className="text-sm text-zinc-300">Multilingual</span>
+              </div>
+              <div className="p-2 bg-zinc-800/50 rounded flex items-center gap-2">
+                <span>🔓</span>
+                <span className="text-sm text-zinc-300">Uncensored</span>
+              </div>
+            </div>
+            
+            <h4 className="font-semibold text-zinc-200 mt-6">Best Models by Task:</h4>
+            <div className="space-y-2 mt-3">
+              <div className="p-3 bg-zinc-800/50 rounded-lg">
+                <p className="font-medium text-zinc-200">💻 For Coding</p>
+                <p className="text-sm text-zinc-400">CodeLlama, DeepSeek-Coder, Qwen-Coder</p>
+              </div>
+              <div className="p-3 bg-zinc-800/50 rounded-lg">
+                <p className="font-medium text-zinc-200">👁️ For Images</p>
+                <p className="text-sm text-zinc-400">LLaVA, BakLLaVA, Moondream</p>
+              </div>
+              <div className="p-3 bg-zinc-800/50 rounded-lg">
+                <p className="font-medium text-zinc-200">📱 For Low RAM (&lt;8GB)</p>
+                <p className="text-sm text-zinc-400">Phi-3, Gemma-2-2B, TinyLlama</p>
+              </div>
+              <div className="p-3 bg-zinc-800/50 rounded-lg">
+                <p className="font-medium text-zinc-200">🎯 General Purpose</p>
+                <p className="text-sm text-zinc-400">Llama 3.2, Mistral, Qwen 2.5</p>
+              </div>
+            </div>
+            
+            <Callout type="tip">
+              Use the <strong>Filter by Capability</strong> buttons in Model Hub 
+              to show only models that match your needs!
+            </Callout>
+          </div>
+        ),
+      },
+      {
+        id: 'import-to-providers',
+        title: 'Import to Ollama/LM Studio',
+        keywords: ['import', 'ollama', 'lmstudio', 'provider', 'use', 'load'],
+        content: (
+          <div className="space-y-4">
+            <p>
+              After downloading a model to Central Storage, import it to your preferred 
+              provider to start using it.
+            </p>
+            
+            <h4 className="font-semibold text-zinc-200 mt-6">How to Import:</h4>
+            <Steps steps={[
+              'Open Model Hub → Central Storage tab',
+              'Find the model you want to use',
+              'Click "Import to Ollama" or "Import to LM Studio"',
+              'Wait for import to complete',
+              'Model is now available in that provider!',
+            ]} />
+            
+            <h4 className="font-semibold text-zinc-200 mt-6">What Happens:</h4>
+            <ul className="space-y-2 text-zinc-400">
+              <li>
+                <strong className="text-zinc-200">For Ollama:</strong> Creates a Modelfile 
+                and registers the model with Ollama
+              </li>
+              <li>
+                <strong className="text-zinc-200">For LM Studio:</strong> Creates a symlink 
+                in LM Studio's models folder (no file copying!)
+              </li>
+            </ul>
+            
+            <Callout type="info">
+              You can import the same model to <strong>both</strong> providers. 
+              They'll share the same file through symlinks.
+            </Callout>
+          </div>
+        ),
+      },
+      {
+        id: 'configure-providers',
+        title: 'Configure Providers for Central Storage',
+        keywords: ['configure', 'setup', 'native', 'symlink', 'provider'],
+        content: (
+          <div className="space-y-4">
+            <p>
+              Want Ollama and LM Studio to use Central Storage <strong className="text-zinc-200">even without MrSnappy</strong>? 
+              You can configure them to read directly from your central location.
+            </p>
+            
+            <h4 className="font-semibold text-zinc-200 mt-6">How to Configure:</h4>
+            <Steps steps={[
+              'Open Model Hub → Central Storage → "Configure Storage" tab',
+              'Click "Configure Ollama" or "Configure LM Studio"',
+              'MrSnappy backs up your original settings',
+              'Creates symlinks pointing to Central Storage',
+              'Providers now read from ~/MrSnappy-Models/ directly!',
+            ]} />
+            
+            <h4 className="font-semibold text-zinc-200 mt-6">For Ollama (Manual Method):</h4>
+            <p className="text-zinc-400 text-sm">Set the OLLAMA_MODELS environment variable:</p>
+            <CodeBlock code={`export OLLAMA_MODELS=~/MrSnappy-Models
+ollama serve`} />
+            
+            <h4 className="font-semibold text-zinc-200 mt-6">Benefits:</h4>
+            <ul className="list-disc list-inside text-zinc-400 space-y-1">
+              <li>Use your models with Ollama CLI directly</li>
+              <li>Works even when MrSnappy isn't running</li>
+              <li>Models stay organized in one place</li>
+            </ul>
+            
+            <Callout type="warning">
+              <strong>Backup First!</strong> MrSnappy backs up your original directories 
+              before making changes. You can restore anytime from the Configure Storage tab.
+            </Callout>
+          </div>
+        ),
+      },
     ],
   },
   {
