@@ -33,7 +33,7 @@ export interface ToolResult {
   result?: unknown;
   error?: string;
   // For rendering in UI
-  displayType?: 'text' | 'json' | 'list' | 'table' | 'email' | 'search-results';
+  displayType?: 'text' | 'json' | 'list' | 'table' | 'email' | 'search-results' | 'image-results';
 }
 
 // Message with potential tool calls

@@ -1,7 +1,8 @@
 'use client';
 
 import { ExternalLink, Search, CheckCircle, XCircle } from 'lucide-react';
-import { ToolResult, WebSearchResult } from '@/lib/tools';
+import { ToolResult, WebSearchResult, ImageSearchResult } from '@/lib/tools';
+import ImageResultCard from './ImageResultCard';
 
 interface ToolResultCardProps {
   result: ToolResult;
@@ -20,6 +21,13 @@ export default function ToolResultCard({ result }: ToolResultCardProps) {
     );
   }
 
+  // Image search results - show image grid
+  if (result.displayType === 'image-results' && result.result) {
+    const imageResult = result.result as ImageSearchResult;
+    return <ImageResultCard result={imageResult} />;
+  }
+
+  // Web search results - show clickable links
   if (result.displayType === 'search-results' && result.result) {
     const searchResult = result.result as WebSearchResult;
     return <SearchResultsCard result={searchResult} />;

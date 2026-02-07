@@ -2,7 +2,7 @@
 // Central registry of all available tools
 
 import { ToolDefinition, ToolCall, ToolResult, toolToLLMFormat, ToolForLLM } from './types';
-import { webSearchTool, executeWebSearch } from './web-search';
+import { webSearchTool, imageSearchTool, executeWebSearch, executeImageSearch } from './web-search';
 import { 
   gmailTools, 
   executeGmailListInbox, 
@@ -16,6 +16,7 @@ import { IntegrationState } from '../integrations/types';
 // All available tools
 const ALL_TOOLS: ToolDefinition[] = [
   webSearchTool,
+  imageSearchTool,
   ...gmailTools,
   // Add more tools here as we build them
 ];
@@ -29,6 +30,13 @@ const TOOL_EXECUTORS: Record<string, ToolExecutor> = {
     const query = args.query as string;
     const limit = (args.limit as number) || 5;
     return executeWebSearch(query, limit);
+  },
+  
+  // Image Search
+  'image_search': async (args) => {
+    const query = args.query as string;
+    const count = (args.count as number) || 6;
+    return executeImageSearch(query, count);
   },
   
   // Gmail Tools
