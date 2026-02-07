@@ -13,6 +13,8 @@ import {
   ChevronRight,
   Zap,
   Shield,
+  HelpCircle,
+  BookOpen,
 } from 'lucide-react';
 import {
   IntegrationType,
@@ -27,13 +29,25 @@ interface IntegrationsSettingsProps {
   onClose: () => void;
   integrations: IntegrationState[];
   onUpdateIntegrations: (updates: IntegrationState[]) => void;
+  onOpenHelp?: (topic?: string) => void;
 }
+
+// Map integration types to help topics
+const INTEGRATION_HELP_TOPICS: Record<IntegrationType, string> = {
+  'web-search': 'web-search-setup',
+  'email': 'gmail-setup',
+  'calendar': 'calendar-setup',
+  'files': 'first-run', // No specific topic yet
+  'weather': 'first-run', // No specific topic yet
+  'notes': 'first-run', // No specific topic yet
+};
 
 export default function IntegrationsSettings({
   isOpen,
   onClose,
   integrations,
   onUpdateIntegrations,
+  onOpenHelp,
 }: IntegrationsSettingsProps) {
   const [localStates, setLocalStates] = useState<IntegrationState[]>(integrations);
   const [testingIntegration, setTestingIntegration] = useState<IntegrationType | null>(null);
@@ -223,6 +237,19 @@ export default function IntegrationsSettings({
                       <div className="flex items-center gap-2">
                         <h3 className="font-medium">{config.name}</h3>
                         {getStatusBadge(state, config)}
+                        {onOpenHelp && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onClose();
+                              onOpenHelp(INTEGRATION_HELP_TOPICS[config.type]);
+                            }}
+                            className="p-0.5 rounded hover:bg-zinc-700/50 transition-colors text-zinc-500 hover:text-zinc-300"
+                            title={`${config.name} Setup Guide`}
+                          >
+                            <HelpCircle className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                       <p className="text-sm text-zinc-500 truncate">{config.description}</p>
                     </div>
@@ -317,18 +344,32 @@ export default function IntegrationsSettings({
                           </div>
                         )}
                         
-                        {/* Setup Link */}
-                        {config.setupUrl && (
-                          <a
-                            href={config.setupUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 text-sm text-purple-400 hover:text-purple-300 transition-colors"
-                          >
-                            Get API credentials
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        )}
+                        {/* Setup Guide & Links */}
+                        <div className="flex flex-wrap items-center gap-3">
+                          {onOpenHelp && (
+                            <button
+                              onClick={() => {
+                                onClose();
+                                onOpenHelp(INTEGRATION_HELP_TOPICS[config.type]);
+                              }}
+                              className="inline-flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors"
+                            >
+                              <BookOpen className="w-3 h-3" />
+                              Setup Guide
+                            </button>
+                          )}
+                          {config.setupUrl && (
+                            <a
+                              href={config.setupUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-2 text-sm text-purple-400 hover:text-purple-300 transition-colors"
+                            >
+                              Get API credentials
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                        </div>
                         
                         {/* API Key input (if needed) */}
                         {config.requiresApiKey && state.enabled && (

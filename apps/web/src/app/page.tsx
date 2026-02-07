@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Settings, Zap, Loader2, RefreshCw, Cpu, Puzzle } from 'lucide-react';
+import { Send, Settings, Zap, Loader2, RefreshCw, Cpu, Puzzle, HelpCircle } from 'lucide-react';
 import { useConversations } from '@/hooks/useConversations';
 import { useSettings } from '@/hooks/useSettings';
 import { useIntegrations } from '@/hooks/useIntegrations';
@@ -17,6 +17,7 @@ import ModelHub from '@/components/ModelHub';
 import IntegrationsSettings from '@/components/IntegrationsSettings';
 import ProviderStatusBar from '@/components/ProviderStatusBar';
 import NoProviderPrompt from '@/components/NoProviderPrompt';
+import HelpGuide from '@/components/HelpGuide';
 
 export default function Home() {
   const {
@@ -58,6 +59,8 @@ export default function Home() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isModelHubOpen, setIsModelHubOpen] = useState(false);
   const [isIntegrationsOpen, setIsIntegrationsOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [helpTopic, setHelpTopic] = useState<string | undefined>(undefined);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -559,6 +562,12 @@ export default function Home() {
     setTimeout(checkProviderConnection, 100);
   }, [updateSettings]);
 
+  // Open help guide, optionally to a specific topic
+  const openHelp = useCallback((topic?: string) => {
+    setHelpTopic(topic);
+    setIsHelpOpen(true);
+  }, []);
+
   // Don't render until loaded from localStorage
   if (!isLoaded) {
     return (
@@ -644,6 +653,13 @@ export default function Home() {
               title="New chat"
             >
               <RefreshCw className="w-4 h-4 text-zinc-400" />
+            </button>
+            <button 
+              onClick={() => openHelp()}
+              className="p-2 rounded-lg hover:bg-zinc-800 transition-colors border border-zinc-700"
+              title="Help & Documentation"
+            >
+              <HelpCircle className="w-5 h-5 text-zinc-400" />
             </button>
             <button 
               onClick={() => setIsSettingsOpen(true)}
@@ -831,6 +847,14 @@ export default function Home() {
         onClose={() => setIsIntegrationsOpen(false)}
         integrations={integrations}
         onUpdateIntegrations={updateIntegrations}
+        onOpenHelp={openHelp}
+      />
+
+      {/* Help Guide Modal */}
+      <HelpGuide
+        isOpen={isHelpOpen}
+        onClose={() => setIsHelpOpen(false)}
+        initialTopic={helpTopic}
       />
     </div>
   );

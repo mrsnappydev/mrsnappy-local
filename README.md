@@ -1,72 +1,138 @@
-# MrSnappy Local ⚡
+# MrSnappy Local 🐊⚡
 
-A local AI assistant that runs entirely on your machine. Private, fast, and always available.
+**Your private AI assistant that runs entirely on your machine.** No cloud, no subscriptions, no data leaving your device. Just you and a powerful AI, having a conversation.
 
-## Features
+<p align="center">
+  <img src="docs/screenshot.png" alt="MrSnappy Local Screenshot" width="800">
+</p>
 
-- 🏠 **100% Local** — All processing happens on your machine
-- 🔒 **Privacy-First** — Your conversations never leave your device
-- ⚡ **Fast** — No internet latency
-- 🔌 **Multi-Provider** — Works with Ollama and LM Studio
-- 🎨 **Beautiful UI** — Clean, modern chat interface
-- 📦 **Easy Setup** — One-click installation (coming soon)
+## ✨ Why MrSnappy Local?
 
-## Supported Backends
+| Feature | MrSnappy Local | Cloud AI Services |
+|---------|----------------|-------------------|
+| 🔒 **Privacy** | 100% local - data never leaves your device | Data sent to external servers |
+| 💰 **Cost** | Free forever | $20+/month subscriptions |
+| ⚡ **Speed** | No internet latency | Depends on connection |
+| 🔌 **Offline** | Works without internet | Requires internet |
+| 🎛️ **Control** | Choose any model, customize everything | Limited options |
 
-| Provider | API Type | Default Port | Status |
-|----------|----------|--------------|--------|
-| 🦙 [Ollama](https://ollama.ai) | Native Ollama API | 11434 | ✅ Supported |
-| 🎛️ [LM Studio](https://lmstudio.ai) | OpenAI-compatible | 1234 | ✅ Supported |
+## 🚀 Features
 
-Both providers are auto-detected on startup. Switch between them seamlessly in Settings.
+- **🦙 Multi-Provider Support** - Works with [Ollama](https://ollama.ai) and [LM Studio](https://lmstudio.ai)
+- **🔄 One-Click Model Switching** - Switch between models instantly
+- **⚡ Streaming Responses** - Watch responses appear in real-time
+- **💾 Persistent History** - Conversations saved locally, survive browser restarts
+- **🔍 Web Search Integration** - Let MrSnappy search the web (via DuckDuckGo)
+- **✏️ Edit & Regenerate** - Edit messages and regenerate responses
+- **🎨 Beautiful UI** - Dark theme, syntax highlighting, markdown rendering
+- **📤 Export/Import** - Backup and restore your conversations
+- **🔎 Search Conversations** - Find past conversations instantly
+- **📚 Built-in Help** - Comprehensive documentation right in the app
 
-## Prerequisites
+### Coming Soon
+- 📧 Gmail integration
+- 📅 Google Calendar integration
+- 🎤 Voice input
+- 🖼️ Image analysis (vision models)
+- 📱 Mobile apps
 
-**Option A: Ollama**
-- [Ollama](https://ollama.ai) installed and running
-- A model pulled (e.g., `ollama pull llama3.2`)
+## 📋 Quick Start
 
-**Option B: LM Studio**
-- [LM Studio](https://lmstudio.ai) installed
-- A model loaded and the local server started
+### Prerequisites
 
-## Development
+You need **one** of the following AI backends:
+
+**Option A: Ollama** (Recommended for beginners)
+- Download from [ollama.ai](https://ollama.ai)
+- Easy to use, great performance
+
+**Option B: LM Studio** (Graphical interface)
+- Download from [lmstudio.ai](https://lmstudio.ai)
+- GUI for browsing and managing models
+
+### Installation
 
 ```bash
+# Clone the repository
+git clone https://github.com/yourusername/mrsnappy-local.git
+cd mrsnappy-local
+
 # Install dependencies
 npm install
 
-# Start the web app
+# Start the development server
 npm run dev
-
-# Open http://localhost:3000
 ```
 
-## Architecture
+### First Run
+
+1. **Start your AI backend:**
+
+   For Ollama:
+   ```bash
+   # Install Ollama first, then:
+   ollama serve
+   
+   # In another terminal, pull a model:
+   ollama pull llama3.2
+   ```
+
+   For LM Studio:
+   - Open LM Studio
+   - Download a model from the "Discover" tab
+   - Go to "Local Server" → Start Server
+
+2. **Open MrSnappy:**
+   - Navigate to [http://localhost:3000](http://localhost:3000)
+   - MrSnappy auto-detects your provider!
+
+3. **Start chatting!** 🎉
+
+## 💻 System Requirements
+
+### Minimum
+- 8GB RAM (for small models like Phi-3)
+- 5GB free disk space
+- Modern CPU (2018+)
+
+### Recommended
+- 16GB+ RAM
+- NVIDIA GPU with 8GB+ VRAM (or Apple Silicon)
+- SSD for fast model loading
+
+### Model Size Guide
+
+| Model Size | RAM Needed | Example Models |
+|------------|------------|----------------|
+| ~2B params | 4-6 GB | Gemma-2 2B, Phi-3 Mini |
+| ~7-8B params | 8-12 GB | Llama 3.2, Mistral 7B |
+| ~13B params | 16 GB | Llama 2 13B |
+| ~70B params | 48+ GB | Llama 3.1 70B |
+
+## 🏗️ Architecture
 
 ```
 mrsnappy-local/
 ├── apps/
-│   ├── web/                    # Next.js web interface
-│   │   └── src/
-│   │       ├── app/            # Routes & API endpoints
-│   │       ├── components/     # UI components
-│   │       ├── hooks/          # React hooks
-│   │       ├── lib/
-│   │       │   └── providers/  # Model provider abstraction
-│   │       └── types/          # TypeScript types
-│   └── desktop/                # Tauri desktop wrapper (planned)
-├── packages/
-│   └── core/                   # Shared logic (planned)
-└── README.md
+│   └── web/                    # Next.js web interface
+│       └── src/
+│           ├── app/            # Routes & API endpoints
+│           ├── components/     # UI components
+│           ├── hooks/          # React hooks
+│           ├── lib/
+│           │   ├── providers/  # Ollama, LM Studio adapters
+│           │   ├── integrations/ # Email, Calendar, etc.
+│           │   └── tools/      # Tool framework (search, etc.)
+│           └── types/          # TypeScript types
+└── packages/
+    └── core/                   # Shared logic (planned)
 ```
 
-## Provider Abstraction
+### Provider Abstraction
 
-MrSnappy uses a provider abstraction layer to support multiple LLM backends:
+MrSnappy uses a clean provider abstraction to support multiple backends:
 
 ```typescript
-// lib/providers/types.ts
 interface ModelProvider {
   checkConnection(): Promise<boolean>;
   getModels(): Promise<ModelInfo[]>;
@@ -75,58 +141,139 @@ interface ModelProvider {
 }
 ```
 
-Adding new providers (like LocalAI, vLLM, etc.) is straightforward — just implement the `ModelProvider` interface.
+Adding new providers (LocalAI, vLLM, etc.) is as simple as implementing this interface.
 
-## Environment Variables
+## ⚙️ Configuration
+
+### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama API endpoint |
-| `OLLAMA_MODEL` | `llama3.2` | Default model to use |
+| `LMSTUDIO_URL` | `http://localhost:1234` | LM Studio API endpoint |
 
-## Roadmap
+All settings can also be configured through the UI.
 
-### ✅ Phase 0: Foundation
-- [x] Basic chat UI
+## 📖 Documentation
+
+Click the **?** icon in MrSnappy's header to access the built-in help system, which covers:
+
+- 🚀 Getting started guide
+- 🦙 Installing Ollama & LM Studio
+- 📥 Downloading and managing models
+- 🔌 Setting up integrations
+- ⌨️ Keyboard shortcuts
+- 🔧 Troubleshooting
+
+## 🗺️ Roadmap
+
+### ✅ Completed
+- [x] Core chat interface
 - [x] Ollama integration
-- [x] Streaming responses ⚡
-- [x] Conversation history persistence 💾
-- [x] Settings panel ⚙️
-- [x] Search across conversations 🔍
-- [x] Export/Import conversations 📤📥
-- [x] Markdown rendering ✨
-- [x] Code syntax highlighting 🎨
-- [x] Edit/regenerate messages ✏️
+- [x] LM Studio integration
+- [x] Streaming responses
+- [x] Conversation persistence
+- [x] Search conversations
+- [x] Export/import
+- [x] Markdown & code highlighting
+- [x] Edit/regenerate messages
+- [x] Web search integration
+- [x] Provider auto-detection
+- [x] Model Hub UI
+- [x] Built-in help system
 
-### ✅ Phase 1: Model Flexibility
-- [x] Provider abstraction layer 🔌
-- [x] LM Studio support (OpenAI-compatible) 🎛️
-- [x] Auto-detect available providers ⚡
-- [x] Backend selector in Settings UI
-- [ ] Central model folder (unified storage)
-- [ ] Download models from Huggingface
-- [ ] Model compatibility matrix
-
-### 📋 Phase 2: Full Capabilities
-- [ ] Email integration (Gmail, etc)
+### 🚧 In Progress
+- [ ] Gmail integration (OAuth)
 - [ ] Calendar integration
-- [ ] Web search
+- [ ] Weather integration
+
+### 📋 Planned
+- [ ] Voice input/output
+- [ ] Image analysis (vision models)
 - [ ] File management
+- [ ] Memory system (remember preferences)
+- [ ] Desktop app (Tauri)
+- [ ] Mobile companion apps
+- [ ] One-click installer
+- [ ] Docker support
 
-### 📋 Phase 3: User-Friendly Setup
-- [ ] Guided onboarding wizard
-- [ ] Plain-language setup questions
-- [ ] Automatic OAuth flows
+## 🤝 Contributing
 
-### 📋 Phase 4: 1-Click Deploy
-- [ ] Single installer/script
-- [ ] Docker compose
-- [ ] Windows/Mac/Linux support
+Contributions are welcome! Here's how to get started:
 
-## Built by
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Make your changes
+4. Run tests: `npm test`
+5. Commit: `git commit -m 'Add amazing feature'`
+6. Push: `git push origin feature/amazing-feature`
+7. Open a Pull Request
 
-**Torsbotech** — Paul & MrSnappy ⚡
+### Development
 
-## License
+```bash
+# Start development server with hot reload
+npm run dev
 
-MIT
+# Run linting
+npm run lint
+
+# Build for production
+npm run build
+```
+
+## 🐛 Troubleshooting
+
+### "No AI Provider Running"
+Make sure Ollama or LM Studio is running:
+```bash
+# For Ollama:
+ollama serve
+
+# For LM Studio:
+# Open LM Studio → Local Server → Start Server
+```
+
+### Slow Responses
+- Try a smaller model (phi3, gemma-2-2b)
+- Close other resource-heavy applications
+- Enable streaming for perceived speed improvement
+
+### Model Loading Errors
+```bash
+# Re-pull the model:
+ollama pull llama3.2
+
+# Check available models:
+ollama list
+```
+
+See the built-in help guide for more troubleshooting tips.
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## 🙏 Acknowledgments
+
+- [Ollama](https://ollama.ai) - For making local LLMs accessible
+- [LM Studio](https://lmstudio.ai) - For the excellent GUI
+- [Meta](https://ai.meta.com/) - For open-sourcing Llama
+- [Mistral AI](https://mistral.ai/) - For Mistral models
+- The open-source AI community ❤️
+
+---
+
+<p align="center">
+  <strong>Built with ⚡ by <a href="https://github.com/yourusername">Torsbotech</a></strong>
+  <br>
+  <em>Paul & MrSnappy</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/yourusername/mrsnappy-local/issues">Report Bug</a>
+  ·
+  <a href="https://github.com/yourusername/mrsnappy-local/issues">Request Feature</a>
+  ·
+  <a href="https://github.com/yourusername/mrsnappy-local/discussions">Discussions</a>
+</p>

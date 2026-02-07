@@ -138,10 +138,13 @@ export default function ProviderStatusBar({
               
               <div className="p-2">
                 {providers.map((provider) => (
-                  <button
+                  <div
                     key={provider.type}
-                    onClick={() => handleSwitchToProvider(provider.type)}
-                    className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors ${
+                    onClick={() => provider.connected && handleSwitchToProvider(provider.type)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => e.key === 'Enter' && provider.connected && handleSwitchToProvider(provider.type)}
+                    className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors cursor-pointer ${
                       provider.type === currentProvider
                         ? 'bg-amber-500/10 border border-amber-500/30'
                         : 'hover:bg-zinc-800'
@@ -181,7 +184,7 @@ export default function ProviderStatusBar({
                         Start
                       </button>
                     )}
-                  </button>
+                  </div>
                 ))}
               </div>
               
