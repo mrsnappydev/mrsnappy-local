@@ -3,11 +3,20 @@
 
 import { ToolDefinition, ToolCall, ToolResult, toolToLLMFormat, ToolForLLM } from './types';
 import { webSearchTool, executeWebSearch } from './web-search';
+import { 
+  gmailTools, 
+  executeGmailListInbox, 
+  executeGmailReadEmail, 
+  executeGmailSendEmail,
+  executeGmailSearch,
+  executeGmailReply,
+} from './gmail';
 import { IntegrationState } from '../integrations/types';
 
 // All available tools
 const ALL_TOOLS: ToolDefinition[] = [
   webSearchTool,
+  ...gmailTools,
   // Add more tools here as we build them
 ];
 
@@ -15,11 +24,45 @@ const ALL_TOOLS: ToolDefinition[] = [
 type ToolExecutor = (args: Record<string, unknown>) => Promise<ToolResult>;
 
 const TOOL_EXECUTORS: Record<string, ToolExecutor> = {
+  // Web Search
   'web_search': async (args) => {
     const query = args.query as string;
     const limit = (args.limit as number) || 5;
     return executeWebSearch(query, limit);
   },
+  
+  // Gmail Tools
+  'gmail_list_inbox': async (args) => {
+    const maxResults = (args.maxResults as number) || 10;
+    const unreadOnly = (args.unreadOnly as boolean) || false;
+    return executeGmailListInbox(maxResults, unreadOnly);
+  },
+  
+  'gmail_read_email': async (args) => {
+    const emailId = args.emailId as string;
+    return executeGmailReadEmail(emailId);
+  },
+  
+  'gmail_send_email': async (args) => {
+    const to = args.to as string;
+    const subject = args.subject as string;
+    const body = args.body as string;
+    const cc = args.cc as string | undefined;
+    return executeGmailSendEmail(to, subject, body, cc);
+  },
+  
+  'gmail_search': async (args) => {
+    const query = args.query as string;
+    const maxResults = (args.maxResults as number) || 10;
+    return executeGmailSearch(query, maxResults);
+  },
+  
+  'gmail_reply': async (args) => {
+    const emailId = args.emailId as string;
+    const body = args.body as string;
+    return executeGmailReply(emailId, body);
+  },
+  
   // Add more executors here
 };
 

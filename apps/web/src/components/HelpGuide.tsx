@@ -565,9 +565,9 @@ ollama create mymodel -f Modelfile`} />
               Connect your Gmail to let MrSnappy read, search, and send emails on your behalf.
             </p>
             
-            <Callout type="warning">
-              This integration is coming soon! The setup guide below shows what will 
-              be required when it's available.
+            <Callout type="tip">
+              Once connected, you can ask MrSnappy to check your inbox, read emails, 
+              search for messages, send new emails, and reply to threads!
             </Callout>
             
             <h4 className="font-semibold text-zinc-200 mt-6">What you'll need:</h4>
@@ -591,48 +591,71 @@ ollama create mymodel -f Modelfile`} />
               'Click on it, then click "Enable"',
             ]} />
             
-            <h4 className="font-semibold text-zinc-200 mt-6">Step 3: Create OAuth Credentials</h4>
+            <h4 className="font-semibold text-zinc-200 mt-6">Step 3: Configure OAuth Consent Screen</h4>
+            <p className="text-sm text-zinc-400">You need to set up the consent screen before creating credentials:</p>
+            <Steps steps={[
+              'Go to "APIs & Services" → "OAuth consent screen"',
+              'Select "External" user type (unless you have a Workspace account)',
+              'Fill in app name (e.g., "MrSnappy"), user support email, and developer email',
+              'Click "Save and Continue" through the scopes section',
+              'Under "Test users", click "Add Users" and add your Gmail address',
+              'Save and complete the setup',
+            ]} />
+            
+            <h4 className="font-semibold text-zinc-200 mt-6">Step 4: Create OAuth Credentials</h4>
             <Steps steps={[
               'Go to "APIs & Services" → "Credentials"',
               'Click "Create Credentials" → "OAuth client ID"',
-              'If prompted, configure the OAuth consent screen first',
               'For Application type, select "Web application"',
-              'Add http://localhost:3000/api/auth/callback/google to Authorized redirect URIs',
+              'Name it "MrSnappy Local"',
+              'Under "Authorized redirect URIs", add: http://localhost:3000/api/auth/gmail/callback',
               'Click "Create"',
-              'Copy your Client ID and Client Secret',
-            ]} />
-            
-            <h4 className="font-semibold text-zinc-200 mt-6">Step 4: Configure OAuth Consent Screen</h4>
-            <p className="text-sm text-zinc-400">If you haven't published your app, you need to add yourself as a test user:</p>
-            <Steps steps={[
-              'Go to "OAuth consent screen"',
-              'Under "Test users", click "Add Users"',
-              'Add your Gmail address',
-              'Save',
+              'Copy your Client ID and Client Secret (you\'ll need these next!)',
             ]} />
             
             <h4 className="font-semibold text-zinc-200 mt-6">Step 5: Connect in MrSnappy</h4>
             <Steps steps={[
-              'Open Integrations (puzzle icon)',
-              'Click "Email" → "Connect"',
-              'Enter your Client ID and Secret when prompted',
-              'Sign in with your Google account',
+              'Open Integrations (puzzle icon in the header)',
+              'Find "Email" and click "Connect"',
+              'Paste your Client ID and Client Secret in the form',
+              'Click "Connect with Google"',
+              'A popup will open - sign in with your Google account',
+              'Click "Continue" even if it shows "App not verified"',
               'Allow the requested permissions',
+              'The popup closes and you\'re connected!',
             ]} />
+            
+            <h4 className="font-semibold text-zinc-200 mt-6">What you can do after connecting:</h4>
+            <ul className="list-disc list-inside text-zinc-400 space-y-1">
+              <li>"Check my inbox" - Lists your recent emails</li>
+              <li>"Do I have any unread emails?" - Shows unread messages</li>
+              <li>"Search emails from [person]" - Find specific emails</li>
+              <li>"Read the email about [topic]" - Get full email content</li>
+              <li>"Send an email to [person] about [topic]" - Compose and send</li>
+              <li>"Reply to that email saying..." - Reply in a thread</li>
+            </ul>
             
             <h4 className="font-semibold text-zinc-200 mt-6">Troubleshooting:</h4>
             <ul className="space-y-2 text-sm">
               <li>
                 <strong className="text-zinc-200">"Access Denied" error:</strong>
-                <span className="text-zinc-400"> Make sure you added yourself as a test user in the OAuth consent screen.</span>
+                <span className="text-zinc-400"> Make sure you added yourself as a test user in the OAuth consent screen (Step 3).</span>
               </li>
               <li>
                 <strong className="text-zinc-200">"Redirect URI mismatch":</strong>
-                <span className="text-zinc-400"> Double-check the redirect URI is exactly <code className="text-amber-400">http://localhost:3000/api/auth/callback/google</code></span>
+                <span className="text-zinc-400"> Double-check the redirect URI is exactly <code className="text-amber-400">http://localhost:3000/api/auth/gmail/callback</code></span>
               </li>
               <li>
-                <strong className="text-zinc-200">"App not verified":</strong>
+                <strong className="text-zinc-200">"App not verified" warning:</strong>
                 <span className="text-zinc-400"> This is normal for personal use. Click "Advanced" → "Go to MrSnappy (unsafe)" to continue.</span>
+              </li>
+              <li>
+                <strong className="text-zinc-200">Popup blocked:</strong>
+                <span className="text-zinc-400"> Allow popups for localhost:3000 in your browser settings.</span>
+              </li>
+              <li>
+                <strong className="text-zinc-200">"Gmail not connected" in tools:</strong>
+                <span className="text-zinc-400"> Try disconnecting and reconnecting, or check that the integration is enabled in Settings.</span>
               </li>
             </ul>
           </div>

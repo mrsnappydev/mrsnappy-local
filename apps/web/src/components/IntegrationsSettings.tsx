@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   X, 
   Check, 
@@ -15,14 +15,24 @@ import {
   Shield,
   HelpCircle,
   BookOpen,
+  LogOut,
+  Mail,
+  KeyRound,
 } from 'lucide-react';
 import {
   IntegrationType,
   IntegrationState,
   IntegrationConfig,
   INTEGRATIONS,
-  DEFAULT_INTEGRATION_STATES,
 } from '@/lib/integrations';
+import {
+  loadGmailAuth,
+  clearGmailAuth,
+  isGmailConnected,
+  getConnectedEmail,
+  saveGmailAuth,
+  revokeToken,
+} from '@/lib/integrations/gmail';
 
 interface IntegrationsSettingsProps {
   isOpen: boolean;
@@ -37,9 +47,9 @@ const INTEGRATION_HELP_TOPICS: Record<IntegrationType, string> = {
   'web-search': 'web-search-setup',
   'email': 'gmail-setup',
   'calendar': 'calendar-setup',
-  'files': 'first-run', // No specific topic yet
-  'weather': 'first-run', // No specific topic yet
-  'notes': 'first-run', // No specific topic yet
+  'files': 'first-run',
+  'weather': 'first-run',
+  'notes': 'first-run',
 };
 
 export default function IntegrationsSettings({
@@ -52,11 +62,66 @@ export default function IntegrationsSettings({
   const [localStates, setLocalStates] = useState<IntegrationState[]>(integrations);
   const [testingIntegration, setTestingIntegration] = useState<IntegrationType | null>(null);
   const [expandedIntegration, setExpandedIntegration] = useState<IntegrationType | null>(null);
+  
+  // Gmail-specific state
+  const [gmailConnecting, setGmailConnecting] = useState(false);
+  const [gmailEmail, setGmailEmail] = useState<string | null>(null);
+  const [showGmailCredentials, setShowGmailCredentials] = useState(false);
+  const [gmailClientId, setGmailClientId] = useState('');
+  const [gmailClientSecret, setGmailClientSecret] = useState('');
 
-  // Sync with props
+  // Sync with props and check Gmail status
   useEffect(() => {
     setLocalStates(integrations);
-  }, [integrations]);
+    
+    // Check if Gmail is connected
+    const email = getConnectedEmail();
+    setGmailEmail(email);
+    
+    // Update email integration status based on actual connection
+    if (email) {
+      setLocalStates(prev => prev.map(s => 
+        s.type === 'email' 
+          ? { ...s, enabled: true, status: 'connected' as const, metadata: { email } }
+          : s
+      ));
+    }
+  }, [integrations, isOpen]);
+
+  // Listen for OAuth popup messages
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'gmail-auth-success') {
+        setGmailConnecting(false);
+        setGmailEmail(event.data.data?.userInfo?.email);
+        
+        // Update state
+        setLocalStates(prev => prev.map(s => 
+          s.type === 'email' 
+            ? { 
+                ...s, 
+                enabled: true, 
+                status: 'connected' as const, 
+                metadata: { email: event.data.data?.userInfo?.email },
+                lastChecked: Date.now(),
+              }
+            : s
+        ));
+        
+        setShowGmailCredentials(false);
+      } else if (event.data?.type === 'gmail-auth-error') {
+        setGmailConnecting(false);
+        setLocalStates(prev => prev.map(s => 
+          s.type === 'email' 
+            ? { ...s, status: 'error' as const, error: event.data.error }
+            : s
+        ));
+      }
+    };
+    
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
 
   const getState = (type: IntegrationType): IntegrationState => {
     return localStates.find(s => s.type === type) || {
@@ -78,35 +143,136 @@ export default function IntegrationsSettings({
 
   const toggleIntegration = async (type: IntegrationType) => {
     const state = getState(type);
-    const newEnabled = !state.enabled;
+    const config = INTEGRATIONS[type];
     
+    // Special handling for Gmail
+    if (type === 'email') {
+      if (state.enabled) {
+        // Disconnecting - handled by disconnect button
+        return;
+      } else {
+        // Connecting - show credentials or start OAuth
+        setShowGmailCredentials(true);
+        setExpandedIntegration('email');
+        return;
+      }
+    }
+    
+    const newEnabled = !state.enabled;
     updateState(type, { 
       enabled: newEnabled,
       status: newEnabled ? 'connected' : 'disconnected',
     });
   };
 
+  const connectGmail = useCallback(async () => {
+    if (!gmailClientId || !gmailClientSecret) {
+      return;
+    }
+    
+    setGmailConnecting(true);
+    
+    try {
+      // Get auth URL from API
+      const response = await fetch('/api/auth/gmail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: gmailClientId,
+          client_secret: gmailClientSecret,
+        }),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to start OAuth');
+      }
+      
+      const { authUrl } = await response.json();
+      
+      // Open OAuth popup
+      const width = 600;
+      const height = 700;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      
+      const popup = window.open(
+        authUrl,
+        'gmail-oauth',
+        `width=${width},height=${height},left=${left},top=${top},popup=1`
+      );
+      
+      if (!popup) {
+        throw new Error('Popup blocked - please allow popups for this site');
+      }
+      
+      // Poll for popup closure (fallback if message fails)
+      const pollTimer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(pollTimer);
+          setGmailConnecting(false);
+          
+          // Check if we got connected
+          const email = getConnectedEmail();
+          if (email) {
+            setGmailEmail(email);
+            setLocalStates(prev => prev.map(s => 
+              s.type === 'email' 
+                ? { ...s, enabled: true, status: 'connected' as const, metadata: { email } }
+                : s
+            ));
+          }
+        }
+      }, 500);
+      
+    } catch (error) {
+      setGmailConnecting(false);
+      updateState('email', { 
+        status: 'error', 
+        error: error instanceof Error ? error.message : 'Connection failed',
+      });
+    }
+  }, [gmailClientId, gmailClientSecret]);
+
+  const disconnectGmail = useCallback(async () => {
+    const auth = loadGmailAuth();
+    
+    if (auth?.tokens?.access_token) {
+      try {
+        await revokeToken(auth.tokens.access_token);
+      } catch {
+        // Continue with local cleanup even if revoke fails
+      }
+    }
+    
+    clearGmailAuth();
+    setGmailEmail(null);
+    setGmailClientId('');
+    setGmailClientSecret('');
+    
+    updateState('email', {
+      enabled: false,
+      status: 'disconnected',
+      metadata: undefined,
+      error: undefined,
+    });
+  }, []);
+
   const testIntegration = async (type: IntegrationType) => {
     setTestingIntegration(type);
     
-    // Simulate testing the integration
     await new Promise(resolve => setTimeout(resolve, 1000));
     
-    // For web search, we can actually test it
     if (type === 'web-search') {
-      try {
-        const response = await fetch('/api/tools/test-search');
-        if (response.ok) {
-          updateState(type, { status: 'connected', lastChecked: Date.now() });
-        } else {
-          updateState(type, { status: 'error', error: 'Search test failed' });
-        }
-      } catch {
-        // Assume it works for now (DuckDuckGo doesn't need testing)
+      updateState(type, { status: 'connected', lastChecked: Date.now() });
+    } else if (type === 'email') {
+      const email = getConnectedEmail();
+      if (email) {
         updateState(type, { status: 'connected', lastChecked: Date.now() });
+      } else {
+        updateState(type, { status: 'disconnected' });
       }
     } else {
-      // Mock: mark as needing setup
       const config = INTEGRATIONS[type];
       if (config.requiresOAuth || config.requiresApiKey) {
         updateState(type, { status: 'disconnected' });
@@ -213,6 +379,7 @@ export default function IntegrationsSettings({
               const state = getState(config.type);
               const isExpanded = expandedIntegration === config.type;
               const isTesting = testingIntegration === config.type;
+              const isEmail = config.type === 'email';
               
               return (
                 <div
@@ -251,7 +418,12 @@ export default function IntegrationsSettings({
                           </button>
                         )}
                       </div>
-                      <p className="text-sm text-zinc-500 truncate">{config.description}</p>
+                      <p className="text-sm text-zinc-500 truncate">
+                        {isEmail && gmailEmail 
+                          ? `Connected: ${gmailEmail}`
+                          : config.description
+                        }
+                      </p>
                     </div>
                     
                     {/* Toggle & Expand */}
@@ -272,19 +444,43 @@ export default function IntegrationsSettings({
                         </button>
                       )}
                       
-                      {/* Toggle */}
-                      <button
-                        onClick={() => toggleIntegration(config.type)}
-                        className={`p-1 rounded-lg transition-colors ${
-                          state.enabled ? 'text-purple-400' : 'text-zinc-600'
-                        }`}
-                      >
-                        {state.enabled ? (
-                          <ToggleRight className="w-8 h-8" />
+                      {/* Toggle - different for email */}
+                      {isEmail ? (
+                        gmailEmail ? (
+                          <button
+                            onClick={disconnectGmail}
+                            className="flex items-center gap-1.5 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                            title="Disconnect Gmail"
+                          >
+                            <LogOut className="w-3.5 h-3.5" />
+                            Disconnect
+                          </button>
                         ) : (
-                          <ToggleLeft className="w-8 h-8" />
-                        )}
-                      </button>
+                          <button
+                            onClick={() => {
+                              setShowGmailCredentials(true);
+                              setExpandedIntegration('email');
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 rounded-lg transition-colors"
+                          >
+                            <Mail className="w-3.5 h-3.5" />
+                            Connect
+                          </button>
+                        )
+                      ) : (
+                        <button
+                          onClick={() => toggleIntegration(config.type)}
+                          className={`p-1 rounded-lg transition-colors ${
+                            state.enabled ? 'text-purple-400' : 'text-zinc-600'
+                          }`}
+                        >
+                          {state.enabled ? (
+                            <ToggleRight className="w-8 h-8" />
+                          ) : (
+                            <ToggleLeft className="w-8 h-8" />
+                          )}
+                        </button>
+                      )}
                       
                       {/* Expand */}
                       <button
@@ -302,6 +498,67 @@ export default function IntegrationsSettings({
                   {isExpanded && (
                     <div className="px-4 pb-4 pt-0 border-t border-zinc-800 mt-0">
                       <div className="pt-4 space-y-4">
+                        {/* Gmail credentials input */}
+                        {isEmail && showGmailCredentials && !gmailEmail && (
+                          <div className="p-4 bg-zinc-800/50 rounded-lg border border-zinc-700 space-y-4">
+                            <div className="flex items-center gap-2 text-sm font-medium text-zinc-300">
+                              <KeyRound className="w-4 h-4" />
+                              Enter your Google OAuth credentials
+                            </div>
+                            
+                            <p className="text-xs text-zinc-500">
+                              You need to create OAuth credentials in the Google Cloud Console. 
+                              Click "Setup Guide" below for instructions.
+                            </p>
+                            
+                            <div className="space-y-3">
+                              <div>
+                                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                                  Client ID
+                                </label>
+                                <input
+                                  type="text"
+                                  value={gmailClientId}
+                                  onChange={(e) => setGmailClientId(e.target.value)}
+                                  placeholder="xxx.apps.googleusercontent.com"
+                                  className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-purple-500"
+                                />
+                              </div>
+                              
+                              <div>
+                                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                                  Client Secret
+                                </label>
+                                <input
+                                  type="password"
+                                  value={gmailClientSecret}
+                                  onChange={(e) => setGmailClientSecret(e.target.value)}
+                                  placeholder="GOCSPX-..."
+                                  className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-purple-500"
+                                />
+                              </div>
+                            </div>
+                            
+                            <button
+                              onClick={connectGmail}
+                              disabled={!gmailClientId || !gmailClientSecret || gmailConnecting}
+                              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-500 hover:bg-purple-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-medium rounded-lg transition-colors"
+                            >
+                              {gmailConnecting ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  Connecting...
+                                </>
+                              ) : (
+                                <>
+                                  <Mail className="w-4 h-4" />
+                                  Connect with Google
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
+                        
                         {/* Capabilities */}
                         {config.scopes && config.scopes.length > 0 && (
                           <div>
@@ -322,7 +579,7 @@ export default function IntegrationsSettings({
                         )}
                         
                         {/* Requirements */}
-                        {(config.requiresOAuth || config.requiresApiKey) && (
+                        {(config.requiresOAuth || config.requiresApiKey) && !gmailEmail && (
                           <div>
                             <h4 className="text-xs font-medium text-zinc-400 mb-2 uppercase tracking-wider">
                               Requirements
@@ -371,8 +628,8 @@ export default function IntegrationsSettings({
                           )}
                         </div>
                         
-                        {/* API Key input (if needed) */}
-                        {config.requiresApiKey && state.enabled && (
+                        {/* API Key input for non-OAuth integrations */}
+                        {config.requiresApiKey && !config.requiresOAuth && state.enabled && (
                           <div>
                             <label className="block text-xs font-medium text-zinc-400 mb-2">
                               API Key
