@@ -205,18 +205,18 @@ async function getSharedModelsPath(): Promise<string> {
       ];
       break;
     case 'linux':
-      // On Linux, use /var/lib which is typically accessible
-      // Or /tmp as last resort (not persistent but always works)
+      // On Linux, use /var/tmp which is NOT affected by systemd PrivateTmp
+      // /tmp won't work because systemd services have their own private /tmp
       pathsToTry = [
-        '/var/lib/mrsnappy/models',          // Proper Linux shared location
-        '/tmp/mrsnappy-models',               // Always writable, but not persistent
+        '/var/tmp/mrsnappy-models',           // NOT affected by PrivateTmp - this should work!
+        '/var/lib/mrsnappy/models',           // Proper Linux shared location (needs sudo to create)
         '/usr/share/ollama/.ollama/models',   // systemd Ollama location
         join(home, '.ollama', 'models'),      // user's Ollama
       ];
       break;
     default:
       pathsToTry = [
-        '/tmp/mrsnappy-models',
+        '/var/tmp/mrsnappy-models',
         join(home, '.ollama', 'models'),
       ];
   }
@@ -238,8 +238,8 @@ async function getSharedModelsPath(): Promise<string> {
     }
   }
   
-  // Last resort: /tmp is always writable
-  const fallbackPath = '/tmp/mrsnappy-models';
+  // Last resort: /var/tmp is NOT affected by systemd PrivateTmp
+  const fallbackPath = '/var/tmp/mrsnappy-models';
   console.log(`[Import] Falling back to: ${fallbackPath}`);
   try {
     await fs.mkdir(fallbackPath, { recursive: true });
