@@ -368,22 +368,27 @@ export async function importToOllama(
       
       const errorMsg = errorJson.error || errorText;
       
-      // If it's a path access error, try copying to Ollama's directory
+      // If it's a path access error, try to fix permissions first, then copy as fallback
       if (errorMsg.includes("neither 'from' or 'files'") || 
           errorMsg.includes("no such file") ||
           errorMsg.includes("permission denied")) {
         
-        console.log(`[Import] Path not accessible by Ollama, copying to Ollama directory...`);
+        console.log(`[Import] Path not accessible by Ollama, trying to fix permissions...`);
         
+        // First, try to make the original file and directory world-readable
         try {
-          // Copy model to Ollama's directory
-          modelPath = await copyModelToOllamaDir(model.path, model.filename);
-          usedCopy = true;
+          const modelDir = dirname(model.path);
           
-          // Retry with new path
-          modelfile = createModelfile(modelPath, options);
-          console.log(`[Import] Retrying with copied path: ${modelPath}`);
+          // Make directory accessible (755 = rwxr-xr-x)
+          await fs.chmod(modelDir, 0o755);
+          console.log(`[Import] Set directory permissions to 755: ${modelDir}`);
           
+          // Make file readable (644 = rw-r--r--)
+          await fs.chmod(model.path, 0o644);
+          console.log(`[Import] Set file permissions to 644: ${model.path}`);
+          
+          // Retry with original path
+          console.log(`[Import] Retrying with original path after permission fix...`);
           response = await fetch(`${ollamaUrl}/api/create`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -393,14 +398,50 @@ export async function importToOllama(
               stream: false,
             }),
           });
-        } catch (copyError) {
-          console.error('[Import] Failed to copy model:', copyError);
-          return {
-            success: false,
-            modelId: model.id,
-            provider: 'ollama',
-            error: `Ollama cannot access the model file, and copying to Ollama's directory failed: ${copyError instanceof Error ? copyError.message : 'Unknown error'}`,
-          };
+          
+          // If that worked, we're done
+          if (response.ok) {
+            console.log(`[Import] Permission fix worked!`);
+          }
+        } catch (chmodError) {
+          console.log(`[Import] Could not fix permissions: ${chmodError}`);
+        }
+        
+        // If still failing, try copying as fallback
+        if (!response.ok) {
+          console.log(`[Import] Permission fix didn't help, trying to copy...`);
+          
+          try {
+            // Copy model to shared directory
+            modelPath = await copyModelToOllamaDir(model.path, model.filename);
+            usedCopy = true;
+            
+            // Retry with new path
+            modelfile = createModelfile(modelPath, options);
+            console.log(`[Import] Retrying with copied path: ${modelPath}`);
+            
+            response = await fetch(`${ollamaUrl}/api/create`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: modelName,
+                modelfile: modelfile,
+                stream: false,
+              }),
+            });
+          } catch (copyError) {
+            console.error('[Import] Failed to copy model:', copyError);
+            return {
+              success: false,
+              modelId: model.id,
+              provider: 'ollama',
+              error: `Ollama cannot access the model file. Tried:\n` +
+                     `1. Making file world-readable (may need: chmod 644 "${model.path}")\n` +
+                     `2. Copying to shared location (failed: ${copyError instanceof Error ? copyError.message : 'Unknown error'})\n\n` +
+                     `Fix: Run this command to make your models readable by Ollama:\n` +
+                     `chmod -R a+rX ~/MrSnappy-Models`,
+            };
+          }
         }
       }
     }
