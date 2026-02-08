@@ -3,7 +3,7 @@
 
 import { promises as fs } from 'fs';
 import { join, basename, dirname } from 'path';
-import { homedir, platform } from 'os';
+import { homedir, platform, hostname } from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { StoredModel, updateModelImport } from './storage';
@@ -22,6 +22,7 @@ export interface OllamaImportOptions {
   modelName?: string;  // Custom name for the model in Ollama
   systemPrompt?: string;  // Optional system prompt in Modelfile
   parameters?: Record<string, string | number>;  // Optional parameters
+  ollamaUrl?: string;  // URL of the Ollama server
 }
 
 export interface LMStudioImportOptions {
@@ -68,6 +69,21 @@ function generateModelName(filename: string): string {
 }
 
 /**
+ * Check if Ollama is running on the same machine as this server
+ * by checking if it's localhost
+ */
+export function isOllamaLocal(ollamaUrl?: string): boolean {
+  const url = ollamaUrl || process.env.OLLAMA_URL || 'http://localhost:11434';
+  try {
+    const parsedUrl = new URL(url);
+    const host = parsedUrl.hostname.toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  } catch {
+    return true; // Assume local if URL parsing fails
+  }
+}
+
+/**
  * Create an Ollama Modelfile for a GGUF model
  */
 function createModelfile(modelPath: string, options: OllamaImportOptions = {}): string {
@@ -92,6 +108,18 @@ ${options.systemPrompt}
 }
 
 /**
+ * Check if a file exists and is accessible
+ */
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await fs.access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Import a model to Ollama
  */
 export async function importToOllama(
@@ -99,19 +127,36 @@ export async function importToOllama(
   options: OllamaImportOptions = {}
 ): Promise<ImportResult> {
   const modelName = options.modelName || generateModelName(model.filename);
+  const ollamaUrl = options.ollamaUrl || process.env.OLLAMA_URL || 'http://localhost:11434';
   
   try {
+    // Check if model file exists
+    if (!await fileExists(model.path)) {
+      return {
+        success: false,
+        modelId: model.id,
+        provider: 'ollama',
+        error: `Model file not found: ${model.path}`,
+      };
+    }
+    
+    // Check if Ollama is running locally
+    // If Ollama is remote, it won't be able to access the local file path
+    if (!isOllamaLocal(ollamaUrl)) {
+      return {
+        success: false,
+        modelId: model.id,
+        provider: 'ollama',
+        error: `Cannot import to remote Ollama server. The model file is stored on this server but Ollama is running at ${ollamaUrl}. ` +
+               `For network setups, run Ollama on the same machine as MrSnappy, or manually download the model to your local machine.`,
+      };
+    }
+    
     // Create Modelfile content
     const modelfile = createModelfile(model.path, options);
     
-    // Write temporary Modelfile
-    const tempDir = join(dirname(model.path), '.temp');
-    await fs.mkdir(tempDir, { recursive: true });
-    const modelfilePath = join(tempDir, `Modelfile-${modelName}`);
-    await fs.writeFile(modelfilePath, modelfile, 'utf-8');
-    
-    // Get Ollama URL from environment
-    const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
+    console.log(`[Import] Creating Ollama model "${modelName}" from ${model.path}`);
+    console.log(`[Import] Modelfile content:\n${modelfile}`);
     
     // Use Ollama API to create model
     const response = await fetch(`${ollamaUrl}/api/create`, {
@@ -125,17 +170,32 @@ export async function importToOllama(
     });
     
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Ollama create failed: ${error}`);
+      const errorText = await response.text();
+      let errorJson;
+      try {
+        errorJson = JSON.parse(errorText);
+      } catch {
+        errorJson = { error: errorText };
+      }
+      
+      // Provide helpful error messages
+      let helpfulError = errorJson.error || errorText;
+      
+      if (helpfulError.includes("neither 'from' or 'files'")) {
+        helpfulError = `Ollama couldn't parse the model path. This usually means the file path "${model.path}" is not accessible from where Ollama is running. ` +
+                       `Make sure Ollama and MrSnappy are on the same machine, or the model files are in a shared location.`;
+      }
+      
+      throw new Error(helpfulError);
     }
     
-    // Clean up temp Modelfile
-    try {
-      await fs.unlink(modelfilePath);
-      await fs.rmdir(tempDir);
-    } catch {
-      // Ignore cleanup errors
+    // Check response for any errors
+    const result = await response.json();
+    if (result.error) {
+      throw new Error(result.error);
     }
+    
+    console.log(`[Import] Successfully created Ollama model: ${modelName}`);
     
     // Update registry
     await updateModelImport(model.id, 'ollama', true, modelName);
@@ -148,6 +208,7 @@ export async function importToOllama(
     };
     
   } catch (error) {
+    console.error('[Import] Ollama import failed:', error);
     return {
       success: false,
       modelId: model.id,
@@ -199,6 +260,16 @@ export async function importToLMStudio(
   const useSymlink = options.useSymlink !== false;  // Default to true
   
   try {
+    // Check if model file exists
+    if (!await fileExists(model.path)) {
+      return {
+        success: false,
+        modelId: model.id,
+        provider: 'lmstudio',
+        error: `Model file not found: ${model.path}`,
+      };
+    }
+    
     const lmStudioPath = getLMStudioModelsPath();
     
     // Ensure LM Studio models directory exists
@@ -289,10 +360,10 @@ export async function removeFromLMStudio(model: StoredModel): Promise<boolean> {
 /**
  * Check if Ollama is running
  */
-export async function isOllamaRunning(): Promise<boolean> {
+export async function isOllamaRunning(ollamaUrl?: string): Promise<boolean> {
   try {
-    const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
-    const response = await fetch(`${ollamaUrl}/api/tags`, {
+    const url = ollamaUrl || process.env.OLLAMA_URL || 'http://localhost:11434';
+    const response = await fetch(`${url}/api/tags`, {
       signal: AbortSignal.timeout(3000),
     });
     return response.ok;
@@ -324,10 +395,10 @@ export async function isLMStudioAvailable(): Promise<boolean> {
 /**
  * Get Ollama's model list to check what's already imported
  */
-export async function getOllamaModels(): Promise<string[]> {
+export async function getOllamaModels(ollamaUrl?: string): Promise<string[]> {
   try {
-    const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
-    const response = await fetch(`${ollamaUrl}/api/tags`);
+    const url = ollamaUrl || process.env.OLLAMA_URL || 'http://localhost:11434';
+    const response = await fetch(`${url}/api/tags`);
     
     if (!response.ok) {
       return [];
@@ -338,4 +409,19 @@ export async function getOllamaModels(): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * Get deployment info for diagnostics
+ */
+export function getDeploymentInfo(): {
+  hostname: string;
+  platform: string;
+  isNetworkDeployment: boolean;
+} {
+  return {
+    hostname: hostname(),
+    platform: platform(),
+    isNetworkDeployment: false, // This would need to be determined by comparing request origin
+  };
 }

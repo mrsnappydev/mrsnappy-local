@@ -19,6 +19,7 @@ interface ImportRequest {
   modelId: string;
   provider: 'ollama' | 'lmstudio';
   action: 'import' | 'remove';
+  providerUrl?: string;  // URL of the provider (e.g., http://192.168.1.100:11434 for remote Ollama)
   options?: {
     modelName?: string;  // Custom name for Ollama
     systemPrompt?: string;
@@ -42,7 +43,7 @@ interface ImportResponse {
 export async function POST(request: NextRequest): Promise<NextResponse<ImportResponse>> {
   try {
     const body: ImportRequest = await request.json();
-    const { modelId, provider, action, options } = body;
+    const { modelId, provider, action, providerUrl, options } = body;
     
     if (!modelId || !provider || !action) {
       return NextResponse.json(
@@ -75,7 +76,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ImportRes
     
     // Check provider availability
     if (provider === 'ollama') {
-      const isRunning = await isOllamaRunning();
+      const ollamaUrl = providerUrl || process.env.OLLAMA_URL || 'http://localhost:11434';
+      const isRunning = await isOllamaRunning(ollamaUrl);
       if (!isRunning) {
         return NextResponse.json(
           { 
@@ -83,7 +85,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ImportRes
             modelId,
             provider,
             action,
-            error: 'Ollama is not running. Please start Ollama first.' 
+            error: `Ollama is not running at ${ollamaUrl}. Please start Ollama first.` 
           },
           { status: 503 }
         );
@@ -109,9 +111,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<ImportRes
     if (action === 'import') {
       // Import to provider
       if (provider === 'ollama') {
+        const ollamaUrl = providerUrl || process.env.OLLAMA_URL || 'http://localhost:11434';
         const ollamaOptions: OllamaImportOptions = {
           modelName: options?.modelName,
           systemPrompt: options?.systemPrompt,
+          ollamaUrl,
         };
         result = await importToOllama(model, ollamaOptions);
       } else {
