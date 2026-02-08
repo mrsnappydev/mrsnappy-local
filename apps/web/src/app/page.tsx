@@ -198,6 +198,8 @@ export default function Home() {
       model: settings.model,
       systemPrompt: fullSystemPrompt,
       projectPath: activeProject?.path || null,
+      // Include Anthropic API key if using Claude
+      ...(settings.provider === 'anthropic' && { anthropicApiKey: settings.anthropicApiKey }),
     };
   };
 

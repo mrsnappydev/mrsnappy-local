@@ -80,6 +80,27 @@ export default function SettingsModal({
     setIsLoadingModels(true);
     setConnectionStatus('checking');
     
+    // Handle Anthropic separately (predefined models, API key validation)
+    if (localSettings.provider === 'anthropic') {
+      const claudeModels = [
+        { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', provider: 'anthropic' as ProviderType },
+        { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', provider: 'anthropic' as ProviderType },
+        { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku (Fast)', provider: 'anthropic' as ProviderType },
+        { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', provider: 'anthropic' as ProviderType },
+      ];
+      
+      setAvailableModels(claudeModels);
+      setConnectionStatus(localSettings.anthropicApiKey ? 'connected' : 'error');
+      
+      // Auto-select first model if none selected
+      if (!localSettings.model || !localSettings.model.startsWith('claude')) {
+        setLocalSettings(prev => ({ ...prev, model: 'claude-sonnet-4-20250514' }));
+      }
+      
+      setIsLoadingModels(false);
+      return;
+    }
+    
     try {
       const provider = createProvider({
         type: localSettings.provider,
@@ -126,6 +147,7 @@ export default function SettingsModal({
     switch (provider) {
       case 'ollama': return 'http://localhost:11434';
       case 'lmstudio': return 'http://localhost:1234';
+      case 'anthropic': return 'https://api.anthropic.com';
       default: return 'http://localhost:8080';
     }
   };
@@ -153,7 +175,17 @@ export default function SettingsModal({
     switch (type) {
       case 'ollama': return '🦙';
       case 'lmstudio': return '🎛️';
+      case 'anthropic': return '🧠';
       default: return '🔌';
+    }
+  };
+
+  const getProviderName = (type: ProviderType) => {
+    switch (type) {
+      case 'ollama': return 'Ollama';
+      case 'lmstudio': return 'LM Studio';
+      case 'anthropic': return 'Claude';
+      default: return type;
     }
   };
 
@@ -203,11 +235,13 @@ export default function SettingsModal({
               </button>
             </div>
             
-            <div className="grid grid-cols-2 gap-2">
-              {(['ollama', 'lmstudio'] as ProviderType[]).map((type) => {
+            <div className="grid grid-cols-3 gap-2">
+              {(['ollama', 'lmstudio', 'anthropic'] as ProviderType[]).map((type) => {
                 const detected = detectedProviders.find(p => p.type === type);
                 const isSelected = localSettings.provider === type;
-                const isConnected = detected?.connected;
+                const isConnected = type === 'anthropic' 
+                  ? !!localSettings.anthropicApiKey 
+                  : detected?.connected;
                 
                 return (
                   <button
@@ -222,10 +256,24 @@ export default function SettingsModal({
                     <div className="flex items-center gap-2">
                       <span className="text-lg">{getProviderIcon(type)}</span>
                       <span className="font-medium text-sm">
-                        {type === 'ollama' ? 'Ollama' : 'LM Studio'}
+                        {getProviderName(type)}
                       </span>
                     </div>
-                    {detected && (
+                    {type === 'anthropic' ? (
+                      <div className="mt-1 flex items-center gap-1">
+                        {localSettings.anthropicApiKey ? (
+                          <>
+                            <Check className="w-3 h-3 text-green-500" />
+                            <span className="text-xs text-green-500">API key set</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle className="w-3 h-3 text-zinc-500" />
+                            <span className="text-xs text-zinc-500">Need API key</span>
+                          </>
+                        )}
+                      </div>
+                    ) : detected && (
                       <div className="mt-1 flex items-center gap-1">
                         {isConnected ? (
                           <>
@@ -253,60 +301,96 @@ export default function SettingsModal({
             </div>
           </div>
 
-          {/* Provider URL */}
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-2">
-              {localSettings.provider === 'ollama' ? 'Ollama' : 'LM Studio'} URL
-            </label>
-            <div className="flex gap-2">
+          {/* Anthropic API Key (only shown when Anthropic is selected) */}
+          {localSettings.provider === 'anthropic' && (
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-2">
+                Anthropic API Key
+              </label>
               <input
-                type="text"
-                value={localSettings.providerUrl}
-                onChange={(e) => setLocalSettings(prev => ({ ...prev, providerUrl: e.target.value }))}
-                className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-amber-500"
-                placeholder={getDefaultUrl(localSettings.provider)}
+                type="password"
+                value={localSettings.anthropicApiKey || ''}
+                onChange={(e) => setLocalSettings(prev => ({ ...prev, anthropicApiKey: e.target.value }))}
+                className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-amber-500"
+                placeholder="sk-ant-..."
               />
-              <button
-                onClick={fetchModels}
-                className="px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg hover:bg-zinc-700 transition-colors"
-              >
-                Test
-              </button>
-            </div>
-            <div className="flex items-center gap-2 mt-2">
-              {connectionStatus === 'checking' && (
-                <>
-                  <Loader2 className="w-4 h-4 text-zinc-500 animate-spin" />
-                  <span className="text-xs text-zinc-500">Checking connection...</span>
-                </>
-              )}
-              {connectionStatus === 'connected' && (
-                <>
-                  <Check className="w-4 h-4 text-green-500" />
-                  <span className="text-xs text-green-500">Connected</span>
-                </>
-              )}
-              {connectionStatus === 'error' && (
-                <>
-                  <AlertCircle className="w-4 h-4 text-red-500" />
-                  <span className="text-xs text-red-500">
-                    Cannot connect to {localSettings.provider === 'ollama' ? 'Ollama' : 'LM Studio'}
-                  </span>
-                </>
-              )}
-            </div>
-            
-            {/* Provider Start Guide - shown when offline */}
-            {connectionStatus === 'error' && (
-              <div className="mt-3">
-                <ProviderStartGuide
-                  provider={getProviderStartInfo(localSettings.provider, false)}
-                  onRefresh={fetchModels}
-                  compact
-                />
+              <p className="text-xs text-zinc-500 mt-2">
+                Get your API key from{' '}
+                <a 
+                  href="https://console.anthropic.com/settings/keys" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-amber-400 hover:underline"
+                >
+                  console.anthropic.com
+                </a>
+              </p>
+              <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                <p className="text-xs text-amber-400">
+                  <strong>🧠 Claude as Head Agent</strong><br/>
+                  Claude orchestrates tools (web search, calendar, etc.) and can delegate 
+                  to local models (Ollama/LM Studio) for specific tasks.
+                </p>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {/* Provider URL (for local providers) */}
+          {localSettings.provider !== 'anthropic' && (
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-2">
+                {getProviderName(localSettings.provider)} URL
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={localSettings.providerUrl}
+                  onChange={(e) => setLocalSettings(prev => ({ ...prev, providerUrl: e.target.value }))}
+                  className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-amber-500"
+                  placeholder={getDefaultUrl(localSettings.provider)}
+                />
+                <button
+                  onClick={fetchModels}
+                  className="px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg hover:bg-zinc-700 transition-colors"
+                >
+                  Test
+                </button>
+              </div>
+              <div className="flex items-center gap-2 mt-2">
+                {connectionStatus === 'checking' && (
+                  <>
+                    <Loader2 className="w-4 h-4 text-zinc-500 animate-spin" />
+                    <span className="text-xs text-zinc-500">Checking connection...</span>
+                  </>
+                )}
+                {connectionStatus === 'connected' && (
+                  <>
+                    <Check className="w-4 h-4 text-green-500" />
+                    <span className="text-xs text-green-500">Connected</span>
+                  </>
+                )}
+                {connectionStatus === 'error' && (
+                  <>
+                    <AlertCircle className="w-4 h-4 text-red-500" />
+                    <span className="text-xs text-red-500">
+                      Cannot connect to {getProviderName(localSettings.provider)}
+                    </span>
+                  </>
+                )}
+              </div>
+              
+              {/* Provider Start Guide - shown when offline */}
+              {connectionStatus === 'error' && (
+                <div className="mt-3">
+                  <ProviderStartGuide
+                    provider={getProviderStartInfo(localSettings.provider, false)}
+                    onRefresh={fetchModels}
+                    compact
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Model Selection */}
           <div>

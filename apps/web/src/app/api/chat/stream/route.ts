@@ -27,6 +27,8 @@ interface StreamRequest {
   temperature?: number;
   // Legacy support
   ollamaUrl?: string;
+  // Anthropic support
+  anthropicApiKey?: string;
 }
 
 interface OllamaChatResponse {
@@ -85,6 +87,82 @@ async function streamFromOllama(messages: ChatMessage[], model: string, temperat
             }
             if (json.done) {
               controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+            }
+          } catch {
+            // Skip malformed JSON
+          }
+        }
+      },
+    })
+  );
+}
+
+async function streamFromAnthropic(
+  messages: ChatMessage[], 
+  model: string, 
+  systemPrompt: string,
+  apiKey: string,
+  temperature?: number
+): Promise<ReadableStream<Uint8Array>> {
+  // Filter out system messages (handled separately)
+  const userMessages = messages.filter(m => m.role !== 'system');
+  
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: userMessages,
+      stream: true,
+      ...(temperature !== undefined && { temperature }),
+    }),
+  });
+
+  if (!res.ok || !res.body) {
+    const errorText = await res.text();
+    throw new Error(`Anthropic stream error: ${res.status} - ${errorText}`);
+  }
+
+  // Transform Anthropic SSE to our format
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  return res.body.pipeThrough(
+    new TransformStream({
+      transform(chunk, controller) {
+        buffer += decoder.decode(chunk, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+          const data = trimmed.slice(6);
+          if (data === '[DONE]') {
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            continue;
+          }
+
+          try {
+            const json = JSON.parse(data);
+            
+            if (json.type === 'content_block_delta' && json.delta?.type === 'text_delta') {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ 
+                  content: json.delta.text, 
+                  done: false 
+                })}\n\n`)
+              );
+            } else if (json.type === 'message_stop') {
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'));
             }
           } catch {
             // Skip malformed JSON
@@ -191,6 +269,7 @@ export async function POST(request: NextRequest) {
       model = 'llama3.2',
       systemPrompt = DEFAULT_SYSTEM_PROMPT,
       temperature,
+      anthropicApiKey,
     } = await request.json() as StreamRequest;
 
     // Prepare messages with system prompt
@@ -202,7 +281,13 @@ export async function POST(request: NextRequest) {
 
     // Call the appropriate provider directly (server-side, no CORS)
     let stream: ReadableStream<Uint8Array>;
-    if (providerType === 'lmstudio' || providerType === 'openai-compatible') {
+    
+    if (providerType === 'anthropic') {
+      if (!anthropicApiKey) {
+        throw new Error('Anthropic API key required');
+      }
+      stream = await streamFromAnthropic(fullMessages, model, systemPrompt, anthropicApiKey, temperature);
+    } else if (providerType === 'lmstudio' || providerType === 'openai-compatible') {
       stream = await streamFromLMStudio(fullMessages, model, temperature);
     } else {
       stream = await streamFromOllama(fullMessages, model, temperature);

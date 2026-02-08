@@ -4,6 +4,7 @@ export * from './types';
 export * from './autostart';
 export { OllamaProvider } from './ollama';
 export { LMStudioProvider } from './lmstudio';
+export { AnthropicProvider } from './anthropic';
 
 import {
   ModelProvider,
@@ -14,6 +15,7 @@ import {
 } from './types';
 import { OllamaProvider } from './ollama';
 import { LMStudioProvider } from './lmstudio';
+import { AnthropicProvider } from './anthropic';
 
 export interface DetectedProvider {
   type: ProviderType;
@@ -33,6 +35,8 @@ export function createProvider(config: ProviderConfig): ModelProvider {
     case 'lmstudio':
     case 'openai-compatible':
       return new LMStudioProvider(config.baseUrl, config.apiKey);
+    case 'anthropic':
+      return new AnthropicProvider(config.apiKey, config.baseUrl);
     default:
       throw new Error(`Unknown provider type: ${config.type}`);
   }

@@ -1,6 +1,6 @@
 // Model Provider Types for MrSnappy Local
 
-export type ProviderType = 'ollama' | 'lmstudio' | 'openai-compatible';
+export type ProviderType = 'ollama' | 'lmstudio' | 'openai-compatible' | 'anthropic';
 
 export interface ProviderConfig {
   type: ProviderType;
@@ -86,5 +86,11 @@ export const DEFAULT_PROVIDERS: Record<ProviderType, ProviderConfig> = {
     type: 'openai-compatible',
     name: 'OpenAI Compatible',
     baseUrl: 'http://localhost:8080',
+  },
+  anthropic: {
+    type: 'anthropic',
+    name: 'Claude (Anthropic)',
+    baseUrl: 'https://api.anthropic.com',
+    apiKey: '', // User provides this
   },
 };

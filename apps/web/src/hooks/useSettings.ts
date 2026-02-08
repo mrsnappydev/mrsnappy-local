@@ -11,6 +11,9 @@ export interface Settings {
   // Legacy Ollama fields (kept for backwards compatibility)
   ollamaUrl: string;
   
+  // API Keys for cloud providers
+  anthropicApiKey: string;
+  
   // Model settings
   model: string;
   systemPrompt: string;
@@ -25,6 +28,7 @@ const DEFAULT_SETTINGS: Settings = {
   provider: 'ollama',
   providerUrl: 'http://localhost:11434',
   ollamaUrl: 'http://localhost:11434', // Legacy
+  anthropicApiKey: '', // User provides this for Claude
   model: 'llama3.2',
   systemPrompt: `You are MrSnappy ⚡, a friendly and helpful local AI assistant.
 
