@@ -71,10 +71,25 @@ export async function callLocalLLM(request: LocalLLMRequest): Promise<LocalLLMRe
           const tagsRes = await fetch(`${OLLAMA_URL}/api/tags`);
           if (tagsRes.ok) {
             const tags = await tagsRes.json();
-            targetModel = tags.models?.[0]?.name || 'llama3.2';
+            // Filter for likely text models (avoid image/video models)
+            const textModels = tags.models?.filter((m: { name: string }) => {
+              const name = m.name.toLowerCase();
+              // Skip known non-text models
+              return !name.includes('i2v') && 
+                     !name.includes('image') && 
+                     !name.includes('video') &&
+                     !name.includes('llava') && // vision model
+                     !name.includes('clip');
+            });
+            // Prefer smaller/faster models for quick responses
+            const preferred = ['gemma3', 'qwen3:8b', 'ministral', 'llama3', 'mistral'];
+            const preferredModel = textModels?.find((m: { name: string }) => 
+              preferred.some(p => m.name.toLowerCase().includes(p))
+            );
+            targetModel = preferredModel?.name || textModels?.[0]?.name || 'gemma3:latest';
           }
         } catch {
-          targetModel = 'llama3.2';
+          targetModel = 'gemma3:latest';
         }
       }
       
