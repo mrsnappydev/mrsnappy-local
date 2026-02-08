@@ -3,6 +3,7 @@
 
 import { ToolDefinition, ToolCall, ToolResult, toolToLLMFormat, ToolForLLM } from './types';
 import { webSearchTool, imageSearchTool, executeWebSearch, executeImageSearch } from './web-search';
+import { callLocalLLM } from './local-llm';
 import { 
   gmailTools, 
   executeGmailListInbox, 
@@ -28,6 +29,41 @@ import { diagramTool, executeDiagramCreate, getDiagramToolPrompt } from './diagr
 // Note: project tool executors are in project-files-server.ts and called from API routes
 import { IntegrationState } from '../integrations/types';
 
+// Local LLM Tool - Allows Claude to delegate to Ollama/LM Studio
+const localLLMTool: ToolDefinition = {
+  name: 'local_llm',
+  description: `Delegate a task to a local LLM (Ollama or LM Studio) running on the user's machine. Use this for:
+- Long-form content generation (stories, articles, code)
+- Tasks that benefit from a different model's strengths  
+- Privacy-sensitive content that should stay local
+- Reducing API costs for simple generation tasks
+The local model will process your prompt and return the result.`,
+  integration: 'local', // Always available
+  parameters: {
+    type: 'object',
+    properties: {
+      prompt: {
+        type: 'string',
+        description: 'The prompt to send to the local LLM. Be specific and include all context needed.',
+      },
+      task: {
+        type: 'string',
+        description: 'Brief description of what this task is (shown to user)',
+      },
+      model: {
+        type: 'string',
+        description: 'Specific model to use (e.g., "llama3.2", "codellama"). Leave empty for default.',
+      },
+      provider: {
+        type: 'string',
+        enum: ['ollama', 'lmstudio'],
+        description: 'Which local provider to use. Default: ollama',
+      },
+    },
+    required: ['prompt'],
+  },
+};
+
 // All available tools
 const ALL_TOOLS: ToolDefinition[] = [
   webSearchTool,
@@ -37,7 +73,7 @@ const ALL_TOOLS: ToolDefinition[] = [
   ...projectTools,
   chartTool,
   diagramTool,
-  // Add more tools here as we build them
+  localLLMTool, // Local LLM delegation (Ollama/LM Studio)
 ];
 
 // Tool executors mapped by name
@@ -167,6 +203,32 @@ const TOOL_EXECUTORS: Record<string, ToolExecutor> = {
     return executeDiagramCreate(diagramType, code, title);
   },
   
+  // Local LLM Delegation Tool
+  'local_llm': async (args) => {
+    const prompt = args.prompt as string;
+    const task = args.task as string | undefined;
+    const model = args.model as string | undefined;
+    const provider = args.provider as 'ollama' | 'lmstudio' | undefined;
+    
+    const result = await callLocalLLM({ prompt, task, model, provider });
+    
+    if (result.success) {
+      return {
+        toolCallId: '',
+        name: 'local_llm',
+        success: true,
+        result: `**Local LLM Response** (${result.model} via ${result.provider}, ${result.durationMs}ms):\n\n${result.content}`,
+      };
+    } else {
+      return {
+        toolCallId: '',
+        name: 'local_llm',
+        success: false,
+        error: result.error || 'Failed to get response from local LLM',
+      };
+    }
+  },
+  
   // Project Tools - these are registered but executed via API route
   // See /api/tools/execute/route.ts which imports project-files-server.ts
   'project_create_file': async () => ({
@@ -215,6 +277,10 @@ export function getAvailableTools(integrations: IntegrationState[], activeProjec
     }
     // Visual tools (charts, diagrams) are always available
     if (tool.integration === 'visuals') {
+      return true;
+    }
+    // Local LLM tool is always available (for delegation to Ollama/LM Studio)
+    if (tool.integration === 'local') {
       return true;
     }
     return enabledIntegrations.has(tool.integration as IntegrationState['type']);
