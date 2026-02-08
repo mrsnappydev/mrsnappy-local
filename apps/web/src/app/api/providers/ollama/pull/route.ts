@@ -1,11 +1,12 @@
 // Ollama Model Pull API - Download/pull models
 import { NextRequest, NextResponse } from 'next/server';
 
-const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+const DEFAULT_OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 
 interface PullRequest {
   model: string;
   insecure?: boolean;
+  ollamaUrl?: string;  // Allow client to specify Ollama URL
 }
 
 /**
@@ -16,7 +17,10 @@ interface PullRequest {
 export async function POST(request: NextRequest) {
   try {
     const body: PullRequest = await request.json();
-    const { model, insecure } = body;
+    const { model, insecure, ollamaUrl } = body;
+    
+    // Use provided URL or fall back to default
+    const targetUrl = ollamaUrl || DEFAULT_OLLAMA_URL;
 
     if (!model) {
       return NextResponse.json(
@@ -25,10 +29,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[Ollama] Starting pull for model: ${model}`);
+    console.log(`[Ollama] Starting pull for model: ${model} from ${targetUrl}`);
 
     // Start the pull request to Ollama
-    const res = await fetch(`${OLLAMA_URL}/api/pull`, {
+    const res = await fetch(`${targetUrl}/api/pull`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -144,6 +148,7 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   const model = request.nextUrl.searchParams.get('model');
+  const ollamaUrl = request.nextUrl.searchParams.get('url') || DEFAULT_OLLAMA_URL;
   
   if (!model) {
     return NextResponse.json(
@@ -154,7 +159,7 @@ export async function GET(request: NextRequest) {
 
   try {
     // Check if model exists by trying to show it
-    const res = await fetch(`${OLLAMA_URL}/api/show`, {
+    const res = await fetch(`${ollamaUrl}/api/show`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: model }),

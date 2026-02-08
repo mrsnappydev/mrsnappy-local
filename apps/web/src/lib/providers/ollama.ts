@@ -54,7 +54,11 @@ export class OllamaProvider implements ModelProvider {
 
   async getStatus(): Promise<ProviderStatus> {
     try {
-      const res = await fetch('/api/providers/ollama/status');
+      // Pass the configured URL to the API so it can check the right server
+      const urlParam = this.baseUrl !== 'http://localhost:11434' 
+        ? `?url=${encodeURIComponent(this.baseUrl)}` 
+        : '';
+      const res = await fetch(`/api/providers/ollama/status${urlParam}`);
       const data: ProxyStatusResponse = await res.json();
       
       if (!data.connected) {

@@ -13,6 +13,7 @@ interface OllamaChatRequest {
   model: string;
   messages: ChatMessage[];
   stream?: boolean;
+  ollamaUrl?: string;  // Allow client to specify Ollama URL
   options?: {
     temperature?: number;
   };
@@ -30,7 +31,10 @@ interface OllamaChatResponse {
 export async function POST(request: NextRequest) {
   try {
     const body: OllamaChatRequest = await request.json();
-    const { model, messages, stream = false, options } = body;
+    const { model, messages, stream = false, ollamaUrl, options } = body;
+    
+    // Use provided URL or fall back to default
+    const targetUrl = ollamaUrl || OLLAMA_URL;
     
     if (!model || !messages) {
       return NextResponse.json(
@@ -39,7 +43,9 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    const ollamaRes = await fetch(`${OLLAMA_URL}/api/chat`, {
+    console.log(`[Ollama Chat] Sending request to ${targetUrl} with model ${model}`);
+    
+    const ollamaRes = await fetch(`${targetUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

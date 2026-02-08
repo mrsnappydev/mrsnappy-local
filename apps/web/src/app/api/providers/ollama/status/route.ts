@@ -1,8 +1,8 @@
 // Ollama Status Proxy - Server-side fetch bypasses CORS
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 // Get Ollama URL from environment or use default
-const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+const DEFAULT_OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 
 interface OllamaModel {
   name: string;
@@ -14,18 +14,27 @@ interface OllamaTagsResponse {
   models: OllamaModel[];
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // Allow URL to be passed as query parameter (from client settings)
+  const urlParam = request.nextUrl.searchParams.get('url');
+  const ollamaUrl = urlParam || DEFAULT_OLLAMA_URL;
+  
+  console.log(`[Ollama Status] Checking connection to: ${ollamaUrl}`);
+  
   try {
-    const res = await fetch(`${OLLAMA_URL}/api/tags`, {
+    const res = await fetch(`${ollamaUrl}/api/tags`, {
       signal: AbortSignal.timeout(5000),
+      // Ensure we're not caching stale results
+      cache: 'no-store',
     });
     
     if (!res.ok) {
+      console.log(`[Ollama Status] Got HTTP ${res.status} from ${ollamaUrl}`);
       return NextResponse.json({ 
         connected: false, 
         models: [],
         error: `Ollama returned ${res.status}`,
-        baseUrl: OLLAMA_URL,
+        baseUrl: ollamaUrl,
       });
     }
     
@@ -38,17 +47,29 @@ export async function GET() {
       provider: 'ollama' as const,
     }));
     
+    console.log(`[Ollama Status] Connected! Found ${models.length} models at ${ollamaUrl}`);
+    
     return NextResponse.json({ 
       connected: true, 
       models,
-      baseUrl: OLLAMA_URL,
+      baseUrl: ollamaUrl,
     });
   } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Cannot connect to Ollama';
+    console.log(`[Ollama Status] Connection failed to ${ollamaUrl}: ${errorMsg}`);
+    
     return NextResponse.json({ 
       connected: false, 
       models: [],
-      error: error instanceof Error ? error.message : 'Cannot connect to Ollama',
-      baseUrl: OLLAMA_URL,
+      error: errorMsg,
+      baseUrl: ollamaUrl,
+      // Include troubleshooting info
+      troubleshooting: {
+        triedUrl: ollamaUrl,
+        suggestion: ollamaUrl.includes('localhost') 
+          ? 'Try using http://127.0.0.1:11434 instead of localhost'
+          : 'Check if Ollama is running and accessible at this address',
+      },
     });
   }
 }
