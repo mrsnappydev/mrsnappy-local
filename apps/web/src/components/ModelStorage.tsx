@@ -68,9 +68,11 @@ interface ModelStorageProps {
   onRefreshNeeded?: () => void;
   initialTab?: StorageTab;
   onUseModel?: (modelId: string, provider: 'ollama' | 'lmstudio') => void;
+  trustedNetworks?: string[];  // For Tailscale/VPN setups
+  providerUrl?: string;  // Current provider URL
 }
 
-export default function ModelStorage({ onRefreshNeeded, initialTab = 'models', onUseModel }: ModelStorageProps) {
+export default function ModelStorage({ onRefreshNeeded, initialTab = 'models', onUseModel, trustedNetworks, providerUrl }: ModelStorageProps) {
   const [activeTab, setActiveTab] = useState<StorageTab>(initialTab);
   const [data, setData] = useState<StorageResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -129,6 +131,8 @@ export default function ModelStorage({ onRefreshNeeded, initialTab = 'models', o
           modelId,
           provider,
           action: 'import',
+          providerUrl: provider === 'ollama' ? providerUrl : undefined,
+          trustedNetworks,
         }),
       });
 
@@ -216,6 +220,8 @@ export default function ModelStorage({ onRefreshNeeded, initialTab = 'models', o
             modelId: model.id,
             provider,
             action: 'import',
+            providerUrl: provider === 'ollama' ? providerUrl : undefined,
+            trustedNetworks,
           }),
         });
 

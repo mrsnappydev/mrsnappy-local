@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, RotateCcw, Check, AlertCircle, Loader2, Server, Zap } from 'lucide-react';
+import { X, RotateCcw, Check, AlertCircle, Loader2, Server, Zap, Network, Plus, Trash2 } from 'lucide-react';
 import { Settings } from '@/hooks/useSettings';
 import { 
   ProviderType, 
@@ -386,6 +386,67 @@ export default function SettingsModal({
             <p className="text-xs text-zinc-500 mt-1">
               This sets MrSnappy's personality and behavior
             </p>
+          </div>
+
+          {/* Network Settings */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Network className="w-4 h-4 text-zinc-400" />
+              <label className="text-sm font-medium text-zinc-300">
+                Trusted Networks
+              </label>
+            </div>
+            <p className="text-xs text-zinc-500 mb-3">
+              IP prefixes and domains considered "local" for model imports. 
+              Useful for Tailscale, VPN, or LAN setups.
+            </p>
+            
+            <div className="space-y-2 max-h-32 overflow-y-auto mb-2">
+              {(localSettings.trustedNetworks || []).map((network, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={network}
+                    onChange={(e) => {
+                      const updated = [...(localSettings.trustedNetworks || [])];
+                      updated[index] = e.target.value;
+                      setLocalSettings(prev => ({ ...prev, trustedNetworks: updated }));
+                    }}
+                    className="flex-1 px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs focus:outline-none focus:border-amber-500"
+                    placeholder="e.g., 100. or .ts.net"
+                  />
+                  <button
+                    onClick={() => {
+                      const updated = (localSettings.trustedNetworks || []).filter((_, i) => i !== index);
+                      setLocalSettings(prev => ({ ...prev, trustedNetworks: updated }));
+                    }}
+                    className="p-1 hover:bg-zinc-700 rounded text-zinc-500 hover:text-red-400 transition-colors"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            
+            <button
+              onClick={() => {
+                const updated = [...(localSettings.trustedNetworks || []), ''];
+                setLocalSettings(prev => ({ ...prev, trustedNetworks: updated }));
+              }}
+              className="flex items-center gap-1 text-xs text-amber-500 hover:text-amber-400"
+            >
+              <Plus className="w-3 h-3" />
+              Add network
+            </button>
+            
+            <div className="mt-3 p-2 bg-zinc-800/50 rounded text-xs text-zinc-500">
+              <strong>Examples:</strong>
+              <ul className="mt-1 space-y-0.5">
+                <li>• <code className="text-amber-400">100.</code> — Tailscale IPs</li>
+                <li>• <code className="text-amber-400">192.168.</code> — Home network</li>
+                <li>• <code className="text-amber-400">.ts.net</code> — Tailscale MagicDNS</li>
+              </ul>
+            </div>
           </div>
         </div>
 

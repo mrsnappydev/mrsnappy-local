@@ -33,6 +33,8 @@ interface ModelHubProps {
   onClose: () => void;
   currentModel?: string;
   currentProvider: ProviderType;
+  providerUrl?: string;
+  trustedNetworks?: string[];
   onSelectModel: (modelId: string, provider: ProviderType) => void;
 }
 
@@ -53,6 +55,8 @@ export default function ModelHub({
   onClose,
   currentModel,
   currentProvider,
+  providerUrl,
+  trustedNetworks,
   onSelectModel,
 }: ModelHubProps) {
   const [activeTab, setActiveTab] = useState<TabType>('local');
@@ -382,6 +386,8 @@ export default function ModelHub({
                 onSelectModel(modelId, provider);
                 onClose();
               }}
+              providerUrl={providerUrl}
+              trustedNetworks={trustedNetworks}
             />
           )}
           {activeTab === 'huggingface' && (

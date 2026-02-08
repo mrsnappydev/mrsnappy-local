@@ -975,6 +975,8 @@ export default function Home() {
         onClose={() => setIsModelHubOpen(false)}
         currentModel={settings.model}
         currentProvider={settings.provider}
+        providerUrl={settings.providerUrl}
+        trustedNetworks={settings.trustedNetworks}
         onSelectModel={handleModelSelect}
       />
 

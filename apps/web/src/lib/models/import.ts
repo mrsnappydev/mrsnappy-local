@@ -23,6 +23,7 @@ export interface OllamaImportOptions {
   systemPrompt?: string;  // Optional system prompt in Modelfile
   parameters?: Record<string, string | number>;  // Optional parameters
   ollamaUrl?: string;  // URL of the Ollama server
+  trustedNetworks?: string[];  // IP prefixes/suffixes considered "local" (for Tailscale/VPN)
 }
 
 export interface LMStudioImportOptions {
@@ -68,16 +69,51 @@ function generateModelName(filename: string): string {
   return name.toLowerCase();
 }
 
+// Default trusted network prefixes (can be overridden via settings)
+const DEFAULT_TRUSTED_NETWORKS = [
+  '100.',        // Tailscale CGNAT range
+  '10.',         // Private network Class A
+  '192.168.',    // Private network Class C
+  '172.16.', '172.17.', '172.18.', '172.19.', '172.20.',
+  '172.21.', '172.22.', '172.23.', '172.24.', '172.25.',
+  '172.26.', '172.27.', '172.28.', '172.29.', '172.30.', '172.31.',
+  '.local',      // mDNS local domains
+  '.tail',       // Tailscale MagicDNS suffix
+  '.ts.net',     // Tailscale MagicDNS
+];
+
 /**
- * Check if Ollama is running on the same machine as this server
- * by checking if it's localhost
+ * Check if a hostname/IP is considered "local" or trusted
+ * Includes localhost, private networks, and Tailscale ranges
  */
-export function isOllamaLocal(ollamaUrl?: string): boolean {
+export function isHostTrusted(host: string, trustedNetworks?: string[]): boolean {
+  const lowerHost = host.toLowerCase();
+  
+  // Always trust actual localhost
+  if (lowerHost === 'localhost' || lowerHost === '127.0.0.1' || lowerHost === '::1') {
+    return true;
+  }
+  
+  // Check against trusted networks
+  const networks = trustedNetworks || DEFAULT_TRUSTED_NETWORKS;
+  for (const prefix of networks) {
+    if (lowerHost.startsWith(prefix) || lowerHost.endsWith(prefix)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Check if Ollama URL is considered local/trusted
+ * Includes localhost, private networks, and Tailscale ranges by default
+ */
+export function isOllamaLocal(ollamaUrl?: string, trustedNetworks?: string[]): boolean {
   const url = ollamaUrl || process.env.OLLAMA_URL || 'http://localhost:11434';
   try {
     const parsedUrl = new URL(url);
-    const host = parsedUrl.hostname.toLowerCase();
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    return isHostTrusted(parsedUrl.hostname, trustedNetworks);
   } catch {
     return true; // Assume local if URL parsing fails
   }
@@ -140,15 +176,15 @@ export async function importToOllama(
       };
     }
     
-    // Check if Ollama is running locally
-    // If Ollama is remote, it won't be able to access the local file path
-    if (!isOllamaLocal(ollamaUrl)) {
+    // Check if Ollama is on a trusted network (localhost, LAN, Tailscale, etc.)
+    // If Ollama is truly remote (public internet), it won't be able to access the local file path
+    if (!isOllamaLocal(ollamaUrl, options.trustedNetworks)) {
       return {
         success: false,
         modelId: model.id,
         provider: 'ollama',
-        error: `Cannot import to remote Ollama server. The model file is stored on this server but Ollama is running at ${ollamaUrl}. ` +
-               `For network setups, run Ollama on the same machine as MrSnappy, or manually download the model to your local machine.`,
+        error: `Cannot import to remote Ollama server at ${ollamaUrl}. The model file is stored on this server. ` +
+               `If Ollama is on your local network or Tailscale, check Settings → Network to add it as a trusted network.`,
       };
     }
     

@@ -20,6 +20,7 @@ interface ImportRequest {
   provider: 'ollama' | 'lmstudio';
   action: 'import' | 'remove';
   providerUrl?: string;  // URL of the provider (e.g., http://192.168.1.100:11434 for remote Ollama)
+  trustedNetworks?: string[];  // IP prefixes/suffixes considered "local" (for Tailscale/VPN setups)
   options?: {
     modelName?: string;  // Custom name for Ollama
     systemPrompt?: string;
@@ -43,7 +44,7 @@ interface ImportResponse {
 export async function POST(request: NextRequest): Promise<NextResponse<ImportResponse>> {
   try {
     const body: ImportRequest = await request.json();
-    const { modelId, provider, action, providerUrl, options } = body;
+    const { modelId, provider, action, providerUrl, trustedNetworks, options } = body;
     
     if (!modelId || !provider || !action) {
       return NextResponse.json(
@@ -116,6 +117,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ImportRes
           modelName: options?.modelName,
           systemPrompt: options?.systemPrompt,
           ollamaUrl,
+          trustedNetworks,
         };
         result = await importToOllama(model, ollamaOptions);
       } else {

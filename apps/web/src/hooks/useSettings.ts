@@ -16,6 +16,9 @@ export interface Settings {
   systemPrompt: string;
   streamingEnabled: boolean;
   theme: 'dark' | 'light' | 'system';
+  
+  // Network settings for Tailscale/VPN deployments
+  trustedNetworks: string[]; // IP prefixes or hostnames considered "local" (e.g., "100.", "192.168.", "my-server.tail")
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -37,6 +40,31 @@ You were created by Torsbotech, a small AI company. You're proud to be open sour
 Be helpful, be concise, and be real. Skip the corporate speak.`,
   streamingEnabled: true,
   theme: 'dark',
+  // Default trusted networks include Tailscale (100.x.x.x), common LAN ranges, and .local domains
+  trustedNetworks: [
+    '100.',        // Tailscale CGNAT range
+    '10.',         // Private network Class A
+    '192.168.',    // Private network Class C
+    '172.16.',     // Private network Class B (172.16-31.x.x)
+    '172.17.',
+    '172.18.',
+    '172.19.',
+    '172.20.',
+    '172.21.',
+    '172.22.',
+    '172.23.',
+    '172.24.',
+    '172.25.',
+    '172.26.',
+    '172.27.',
+    '172.28.',
+    '172.29.',
+    '172.30.',
+    '172.31.',
+    '.local',      // mDNS local domains
+    '.tail',       // Tailscale MagicDNS suffix (e.g., machine.tail1234.ts.net)
+    '.ts.net',     // Tailscale MagicDNS
+  ],
 };
 
 const STORAGE_KEY = 'mrsnappy-settings';
