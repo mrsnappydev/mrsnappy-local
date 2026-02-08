@@ -1,13 +1,17 @@
 // Local LLM Tool - Allows Claude to delegate tasks to Ollama/LM Studio
 // This enables the "head agent" architecture where Claude orchestrates local models
 
+// Direct calls to local providers (runs server-side in API routes)
+const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+const LMSTUDIO_URL = process.env.LMSTUDIO_URL || 'http://localhost:1234';
+
 export interface LocalLLMRequest {
   prompt: string;
-  model?: string;      // Specific model to use, or 'auto' for default
+  model?: string;
   provider?: 'ollama' | 'lmstudio';
   temperature?: number;
   maxTokens?: number;
-  task?: string;       // Description of the task (for logging)
+  task?: string;
 }
 
 export interface LocalLLMResponse {
@@ -22,41 +26,94 @@ export interface LocalLLMResponse {
 export async function callLocalLLM(request: LocalLLMRequest): Promise<LocalLLMResponse> {
   const startTime = Date.now();
   const provider = request.provider || 'ollama';
+  const temperature = request.temperature ?? 0.7;
+  const maxTokens = request.maxTokens ?? 2048;
   
   console.log(`[LocalLLM] Delegating to ${provider}: "${request.task || request.prompt.slice(0, 50)}..."`);
   
   try {
-    // Call our internal API to reach the local LLM
-    const res = await fetch('/api/tools/local-llm', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: request.prompt,
-        model: request.model,
-        provider,
-        temperature: request.temperature,
-        maxTokens: request.maxTokens,
-      }),
-    });
+    let content: string;
+    let usedModel: string;
     
-    if (!res.ok) {
-      const error = await res.json().catch(() => ({ error: 'Unknown error' }));
-      return {
-        success: false,
-        error: error.error || `Local LLM error: ${res.status}`,
-      };
+    if (provider === 'lmstudio') {
+      // LM Studio uses OpenAI-compatible API
+      const res = await fetch(`${LMSTUDIO_URL}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer lm-studio',
+        },
+        body: JSON.stringify({
+          model: request.model || 'default',
+          messages: [{ role: 'user', content: request.prompt }],
+          temperature,
+          max_tokens: maxTokens,
+          stream: false,
+        }),
+      });
+      
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(`LM Studio error: ${res.status} - ${error}`);
+      }
+      
+      const data = await res.json();
+      content = data.choices?.[0]?.message?.content || '';
+      usedModel = data.model || request.model || 'lmstudio';
+      
+    } else {
+      // Ollama
+      let targetModel = request.model;
+      
+      // Get default model if none specified
+      if (!targetModel) {
+        try {
+          const tagsRes = await fetch(`${OLLAMA_URL}/api/tags`);
+          if (tagsRes.ok) {
+            const tags = await tagsRes.json();
+            targetModel = tags.models?.[0]?.name || 'llama3.2';
+          }
+        } catch {
+          targetModel = 'llama3.2';
+        }
+      }
+      
+      const res = await fetch(`${OLLAMA_URL}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: targetModel,
+          prompt: request.prompt,
+          stream: false,
+          options: {
+            temperature,
+            num_predict: maxTokens,
+          },
+        }),
+      });
+      
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(`Ollama error: ${res.status} - ${error}`);
+      }
+      
+      const data = await res.json();
+      content = data.response || '';
+      usedModel = targetModel || 'unknown';
     }
     
-    const data = await res.json();
+    console.log(`[LocalLLM] Got response from ${usedModel} (${Date.now() - startTime}ms)`);
     
     return {
       success: true,
-      content: data.content,
-      model: data.model,
-      provider: data.provider,
+      content,
+      model: usedModel,
+      provider,
       durationMs: Date.now() - startTime,
     };
+    
   } catch (error) {
+    console.error('[LocalLLM] Error:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to call local LLM',
