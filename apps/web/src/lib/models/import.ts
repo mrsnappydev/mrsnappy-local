@@ -375,11 +375,31 @@ export async function importToOllama(
         
         console.log(`[Import] Path not accessible by Ollama, trying to fix permissions...`);
         
-        // First, try to make the original file and directory world-readable
+        // First, try to make the original file and ALL parent directories accessible
         try {
           const modelDir = dirname(model.path);
           
-          // Make directory accessible (755 = rwxr-xr-x)
+          // Make ALL parent directories traversable (need +x on each)
+          // Walk up the path and ensure each directory has at least 711 (rwx--x--x)
+          const pathParts = model.path.split('/').filter(Boolean);
+          let currentPath = '';
+          for (let i = 0; i < pathParts.length - 1; i++) { // -1 to skip the filename
+            currentPath += '/' + pathParts[i];
+            try {
+              const stats = await fs.stat(currentPath);
+              const currentMode = stats.mode & 0o777;
+              // If directory doesn't have world-execute, add it (allows traversal)
+              if ((currentMode & 0o001) === 0) {
+                const newMode = currentMode | 0o011; // Add group+other execute
+                await fs.chmod(currentPath, newMode);
+                console.log(`[Import] Added traverse permission to: ${currentPath} (${currentMode.toString(8)} -> ${newMode.toString(8)})`);
+              }
+            } catch (e) {
+              console.log(`[Import] Could not check/fix permissions on ${currentPath}: ${e}`);
+            }
+          }
+          
+          // Make model directory accessible (755 = rwxr-xr-x)
           await fs.chmod(modelDir, 0o755);
           console.log(`[Import] Set directory permissions to 755: ${modelDir}`);
           
