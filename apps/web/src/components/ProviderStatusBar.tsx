@@ -49,10 +49,10 @@ export default function ProviderStatusBar({
 
   useEffect(() => {
     checkProviders();
-    // Poll every 10 seconds
-    const interval = setInterval(checkProviders, 10000);
+    // Poll every 30 seconds (reduced from 10 to prevent potential issues)
+    const interval = setInterval(checkProviders, 30000);
     return () => clearInterval(interval);
-  }, [checkProviders]);
+  }, []);
 
   const currentProviderStatus = providers.find(p => p.type === currentProvider);
   const otherProvider = providers.find(p => p.type !== currentProvider);
