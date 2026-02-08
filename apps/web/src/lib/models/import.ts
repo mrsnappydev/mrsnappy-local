@@ -156,6 +156,67 @@ async function fileExists(path: string): Promise<boolean> {
 }
 
 /**
+ * Get Ollama's models directory based on platform
+ * This is where we can copy models so Ollama can always access them
+ */
+function getOllamaModelsPath(): string {
+  const home = homedir();
+  const plat = platform();
+  
+  // Check for OLLAMA_MODELS env var first
+  if (process.env.OLLAMA_MODELS) {
+    return process.env.OLLAMA_MODELS;
+  }
+  
+  switch (plat) {
+    case 'darwin':  // macOS
+      return join(home, '.ollama', 'models');
+    case 'win32':   // Windows
+      return join(home, '.ollama', 'models');
+    case 'linux':
+      // On Linux, check if running as systemd service (models in /usr/share/ollama)
+      // Fall back to user directory
+      return join(home, '.ollama', 'models');
+    default:
+      return join(home, '.ollama', 'models');
+  }
+}
+
+/**
+ * Copy model file to Ollama's accessible directory
+ * Returns the new path where the file was copied
+ */
+async function copyModelToOllamaDir(sourcePath: string, filename: string): Promise<string> {
+  const ollamaModelsPath = getOllamaModelsPath();
+  const mrsnappyDir = join(ollamaModelsPath, 'mrsnappy-imports');
+  
+  // Ensure directory exists
+  await fs.mkdir(mrsnappyDir, { recursive: true });
+  
+  const targetPath = join(mrsnappyDir, filename);
+  
+  // Check if already copied
+  try {
+    const sourceStats = await fs.stat(sourcePath);
+    const targetStats = await fs.stat(targetPath);
+    
+    // If target exists and same size, assume it's the same file
+    if (targetStats.size === sourceStats.size) {
+      console.log(`[Import] Model already copied to ${targetPath}`);
+      return targetPath;
+    }
+  } catch {
+    // Target doesn't exist, continue with copy
+  }
+  
+  console.log(`[Import] Copying model to Ollama directory: ${targetPath}`);
+  await fs.copyFile(sourcePath, targetPath);
+  console.log(`[Import] Copy complete`);
+  
+  return targetPath;
+}
+
+/**
  * Import a model to Ollama
  */
 export async function importToOllama(
@@ -188,14 +249,18 @@ export async function importToOllama(
       };
     }
     
-    // Create Modelfile content
-    const modelfile = createModelfile(model.path, options);
+    // Try import with original path first
+    let modelPath = model.path;
+    let usedCopy = false;
     
-    console.log(`[Import] Creating Ollama model "${modelName}" from ${model.path}`);
+    // Create Modelfile content
+    let modelfile = createModelfile(modelPath, options);
+    
+    console.log(`[Import] Creating Ollama model "${modelName}" from ${modelPath}`);
     console.log(`[Import] Modelfile content:\n${modelfile}`);
     
     // Use Ollama API to create model
-    const response = await fetch(`${ollamaUrl}/api/create`, {
+    let response = await fetch(`${ollamaUrl}/api/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -205,6 +270,7 @@ export async function importToOllama(
       }),
     });
     
+    // Check if failed due to path access issue
     if (!response.ok) {
       const errorText = await response.text();
       let errorJson;
@@ -214,15 +280,56 @@ export async function importToOllama(
         errorJson = { error: errorText };
       }
       
-      // Provide helpful error messages
-      let helpfulError = errorJson.error || errorText;
+      const errorMsg = errorJson.error || errorText;
       
-      if (helpfulError.includes("neither 'from' or 'files'")) {
-        helpfulError = `Ollama couldn't parse the model path. This usually means the file path "${model.path}" is not accessible from where Ollama is running. ` +
-                       `Make sure Ollama and MrSnappy are on the same machine, or the model files are in a shared location.`;
+      // If it's a path access error, try copying to Ollama's directory
+      if (errorMsg.includes("neither 'from' or 'files'") || 
+          errorMsg.includes("no such file") ||
+          errorMsg.includes("permission denied")) {
+        
+        console.log(`[Import] Path not accessible by Ollama, copying to Ollama directory...`);
+        
+        try {
+          // Copy model to Ollama's directory
+          modelPath = await copyModelToOllamaDir(model.path, model.filename);
+          usedCopy = true;
+          
+          // Retry with new path
+          modelfile = createModelfile(modelPath, options);
+          console.log(`[Import] Retrying with copied path: ${modelPath}`);
+          
+          response = await fetch(`${ollamaUrl}/api/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: modelName,
+              modelfile: modelfile,
+              stream: false,
+            }),
+          });
+        } catch (copyError) {
+          console.error('[Import] Failed to copy model:', copyError);
+          return {
+            success: false,
+            modelId: model.id,
+            provider: 'ollama',
+            error: `Ollama cannot access the model file, and copying to Ollama's directory failed: ${copyError instanceof Error ? copyError.message : 'Unknown error'}`,
+          };
+        }
+      }
+    }
+    
+    // Final check on response
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorJson;
+      try {
+        errorJson = JSON.parse(errorText);
+      } catch {
+        errorJson = { error: errorText };
       }
       
-      throw new Error(helpfulError);
+      throw new Error(errorJson.error || errorText);
     }
     
     // Check response for any errors
@@ -231,7 +338,7 @@ export async function importToOllama(
       throw new Error(result.error);
     }
     
-    console.log(`[Import] Successfully created Ollama model: ${modelName}`);
+    console.log(`[Import] Successfully created Ollama model: ${modelName}${usedCopy ? ' (using copied file)' : ''}`);
     
     // Update registry
     await updateModelImport(model.id, 'ollama', true, modelName);
