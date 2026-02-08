@@ -1,7 +1,7 @@
 // Model Import Utilities for MrSnappy Local
 // Import models from central storage to Ollama and LM Studio
 
-import { promises as fs } from 'fs';
+import { promises as fs, constants as fsConstants } from 'fs';
 import { join, basename, dirname } from 'path';
 import { homedir, platform, hostname } from 'os';
 import { exec } from 'child_process';
@@ -156,10 +156,28 @@ async function fileExists(path: string): Promise<boolean> {
 }
 
 /**
- * Get Ollama's models directory based on platform
- * This is where we can copy models so Ollama can always access them
+ * Check if a directory exists and is writable
  */
-function getOllamaModelsPath(): string {
+async function isDirectoryWritable(dirPath: string): Promise<boolean> {
+  try {
+    await fs.access(dirPath, fsConstants.W_OK);
+    return true;
+  } catch {
+    // Try to create it
+    try {
+      await fs.mkdir(dirPath, { recursive: true });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+/**
+ * Get a directory where we can copy models that Ollama can access
+ * Uses a shared location that both MrSnappy and Ollama can read/write
+ */
+async function getSharedModelsPath(): Promise<string> {
   const home = homedir();
   const plat = platform();
   
@@ -168,27 +186,77 @@ function getOllamaModelsPath(): string {
     return process.env.OLLAMA_MODELS;
   }
   
+  // List of paths to try, in order of preference
+  // Prioritize world-accessible locations that both MrSnappy and Ollama can use
+  let pathsToTry: string[] = [];
+  
   switch (plat) {
     case 'darwin':  // macOS
-      return join(home, '.ollama', 'models');
+      pathsToTry = [
+        '/usr/local/share/mrsnappy-models',  // Shared location
+        join(home, '.ollama', 'models'),
+      ];
+      break;
     case 'win32':   // Windows
-      return join(home, '.ollama', 'models');
+      pathsToTry = [
+        'C:\\ProgramData\\MrSnappy\\models',  // Shared location on Windows
+        join(home, '.ollama', 'models'),
+        join(home, 'AppData', 'Local', 'Ollama', 'models'),
+      ];
+      break;
     case 'linux':
-      // On Linux, check if running as systemd service (models in /usr/share/ollama)
-      // Fall back to user directory
-      return join(home, '.ollama', 'models');
+      // On Linux, use /var/lib which is typically accessible
+      // Or /tmp as last resort (not persistent but always works)
+      pathsToTry = [
+        '/var/lib/mrsnappy/models',          // Proper Linux shared location
+        '/tmp/mrsnappy-models',               // Always writable, but not persistent
+        '/usr/share/ollama/.ollama/models',   // systemd Ollama location
+        join(home, '.ollama', 'models'),      // user's Ollama
+      ];
+      break;
     default:
-      return join(home, '.ollama', 'models');
+      pathsToTry = [
+        '/tmp/mrsnappy-models',
+        join(home, '.ollama', 'models'),
+      ];
   }
+  
+  // Try each path and return the first writable one
+  for (const pathToTry of pathsToTry) {
+    console.log(`[Import] Checking shared path: ${pathToTry}`);
+    if (await isDirectoryWritable(pathToTry)) {
+      console.log(`[Import] Using shared path: ${pathToTry}`);
+      
+      // Make directory world-readable so Ollama can access it
+      try {
+        await fs.chmod(pathToTry, 0o755);
+      } catch {
+        // Non-fatal
+      }
+      
+      return pathToTry;
+    }
+  }
+  
+  // Last resort: /tmp is always writable
+  const fallbackPath = '/tmp/mrsnappy-models';
+  console.log(`[Import] Falling back to: ${fallbackPath}`);
+  try {
+    await fs.mkdir(fallbackPath, { recursive: true });
+    await fs.chmod(fallbackPath, 0o777);  // World writable
+  } catch (e) {
+    console.log(`[Import] Could not create fallback path: ${e}`);
+  }
+  return fallbackPath;
 }
 
 /**
- * Copy model file to Ollama's accessible directory
+ * Copy model file to a shared directory that Ollama can access
  * Returns the new path where the file was copied
  */
 async function copyModelToOllamaDir(sourcePath: string, filename: string): Promise<string> {
-  const ollamaModelsPath = getOllamaModelsPath();
-  const mrsnappyDir = join(ollamaModelsPath, 'mrsnappy-imports');
+  const sharedModelsPath = await getSharedModelsPath();
+  const mrsnappyDir = join(sharedModelsPath, 'mrsnappy-imports');
   
   // Ensure directory exists
   await fs.mkdir(mrsnappyDir, { recursive: true });
@@ -209,9 +277,27 @@ async function copyModelToOllamaDir(sourcePath: string, filename: string): Promi
     // Target doesn't exist, continue with copy
   }
   
-  console.log(`[Import] Copying model to Ollama directory: ${targetPath}`);
+  console.log(`[Import] Copying model to shared directory: ${targetPath}`);
+  console.log(`[Import] Source: ${sourcePath}`);
+  console.log(`[Import] This may take a while for large models...`);
+  
   await fs.copyFile(sourcePath, targetPath);
-  console.log(`[Import] Copy complete`);
+  
+  // Make the file readable by all users (for Ollama running as different user)
+  try {
+    await fs.chmod(targetPath, 0o644);  // rw-r--r--
+    console.log(`[Import] Set file permissions to 644 (world-readable)`);
+  } catch (chmodError) {
+    console.log(`[Import] Could not set permissions (non-fatal): ${chmodError}`);
+  }
+  
+  // Verify the file exists and is readable
+  try {
+    const stats = await fs.stat(targetPath);
+    console.log(`[Import] Copy complete: ${targetPath} (${Math.round(stats.size / 1024 / 1024)}MB)`);
+  } catch (e) {
+    console.log(`[Import] Warning: Could not verify copied file: ${e}`);
+  }
   
   return targetPath;
 }
