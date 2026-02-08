@@ -32,36 +32,37 @@ import { IntegrationState } from '../integrations/types';
 // Local LLM Tool - Allows Claude to delegate to Ollama/LM Studio
 const localLLMTool: ToolDefinition = {
   name: 'local_llm',
-  description: `Delegate a task to a local LLM (Ollama or LM Studio) running on the user's machine. Use this for:
-- Long-form content generation (stories, articles, code)
-- Tasks that benefit from a different model's strengths  
-- Privacy-sensitive content that should stay local
-- Reducing API costs for simple generation tasks
-The local model will process your prompt and return the result.`,
+  displayName: 'Local LLM',
+  icon: '🦙',
+  description: `Delegate a task to a local LLM (Ollama or LM Studio) running on the user's machine. Use this for long-form content generation, privacy-sensitive tasks, or to reduce API costs.`,
   integration: 'local', // Always available
-  parameters: {
-    type: 'object',
-    properties: {
-      prompt: {
-        type: 'string',
-        description: 'The prompt to send to the local LLM. Be specific and include all context needed.',
-      },
-      task: {
-        type: 'string',
-        description: 'Brief description of what this task is (shown to user)',
-      },
-      model: {
-        type: 'string',
-        description: 'Specific model to use (e.g., "llama3.2", "codellama"). Leave empty for default.',
-      },
-      provider: {
-        type: 'string',
-        enum: ['ollama', 'lmstudio'],
-        description: 'Which local provider to use. Default: ollama',
-      },
+  parameters: [
+    {
+      name: 'prompt',
+      type: 'string',
+      description: 'The prompt to send to the local LLM. Be specific and include all context needed.',
+      required: true,
     },
-    required: ['prompt'],
-  },
+    {
+      name: 'task',
+      type: 'string',
+      description: 'Brief description of what this task is (shown to user)',
+      required: false,
+    },
+    {
+      name: 'model',
+      type: 'string',
+      description: 'Specific model to use (e.g., "llama3.2", "codellama"). Leave empty for default.',
+      required: false,
+    },
+    {
+      name: 'provider',
+      type: 'string',
+      description: 'Which local provider to use: "ollama" or "lmstudio". Default: ollama',
+      required: false,
+      enum: ['ollama', 'lmstudio'],
+    },
+  ],
 };
 
 // All available tools
