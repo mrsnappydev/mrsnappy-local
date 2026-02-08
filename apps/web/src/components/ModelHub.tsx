@@ -38,7 +38,7 @@ interface ModelHubProps {
   onSelectModel: (modelId: string, provider: ProviderType) => void;
 }
 
-type TabType = 'local' | 'storage' | 'huggingface';
+type TabType = 'local' | 'recommended' | 'storage' | 'huggingface';
 type FilterType = 'all' | 'ollama' | 'lmstudio';
 type CapabilityFilterType = ModelCapability | 'all';
 
@@ -82,10 +82,97 @@ export default function ModelHub({
   const [downloads, setDownloads] = useState<Map<string, DownloadState>>(new Map());
   const downloadAbortRef = useRef<Map<string, AbortController>>(new Map());
   
+  // Recommended models state (Ollama library)
+  const [recommendedModels, setRecommendedModels] = useState<any[]>([]);
+  const [modelCategories, setModelCategories] = useState<any[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [pullingModels, setPullingModels] = useState<Map<string, { status: string; percentage: number }>>(new Map());
+  
+  // Fetch recommended models
+  const fetchRecommendedModels = async () => {
+    try {
+      const response = await fetch('/api/providers/ollama/library');
+      if (response.ok) {
+        const data = await response.json();
+        setRecommendedModels(data.models || []);
+        setModelCategories(data.categories || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch recommended models:', err);
+    }
+  };
+  
+  // Pull a model from Ollama
+  const pullOllamaModel = async (modelId: string) => {
+    setPullingModels(prev => new Map(prev).set(modelId, { status: 'Starting...', percentage: 0 }));
+    
+    try {
+      const response = await fetch('/api/providers/ollama/pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: modelId }),
+      });
+      
+      if (!response.ok || !response.body) {
+        throw new Error('Failed to start download');
+      }
+      
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') {
+              setPullingModels(prev => {
+                const next = new Map(prev);
+                next.delete(modelId);
+                return next;
+              });
+              // Refresh model list
+              fetchRegistry();
+              continue;
+            }
+            
+            try {
+              const progress = JSON.parse(data);
+              setPullingModels(prev => new Map(prev).set(modelId, {
+                status: progress.status || 'Downloading...',
+                percentage: progress.percentage || 0,
+              }));
+            } catch {}
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Pull failed:', err);
+      setPullingModels(prev => {
+        const next = new Map(prev);
+        next.set(modelId, { status: 'Failed', percentage: 0 });
+        setTimeout(() => {
+          setPullingModels(p => {
+            const n = new Map(p);
+            n.delete(modelId);
+            return n;
+          });
+        }, 3000);
+        return next;
+      });
+    }
+  };
+  
   // Fetch local models when modal opens
   useEffect(() => {
     if (isOpen) {
       fetchRegistry();
+      fetchRecommendedModels();
       if (hfModels.length === 0) {
         searchHuggingface('');
       }
@@ -336,6 +423,17 @@ export default function ModelHub({
             )}
           </button>
           <button
+            onClick={() => setActiveTab('recommended')}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'recommended'
+                ? 'text-amber-500 border-b-2 border-amber-500'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 inline mr-2" />
+            Get Models
+          </button>
+          <button
             onClick={() => setActiveTab('storage')}
             className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
               activeTab === 'storage'
@@ -354,8 +452,8 @@ export default function ModelHub({
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            <Sparkles className="w-4 h-4 inline mr-2" />
-            Browse Huggingface
+            <ExternalLink className="w-4 h-4 inline mr-2" />
+            Huggingface
           </button>
         </div>
         
@@ -377,6 +475,22 @@ export default function ModelHub({
               onSearchChange={setSearchQuery}
               onSelectModel={handleSelectLocalModel}
               onRefresh={fetchRegistry}
+            />
+          )}
+          {activeTab === 'recommended' && (
+            <RecommendedModelsTab
+              models={recommendedModels}
+              categories={modelCategories}
+              selectedCategory={selectedCategory}
+              onCategoryChange={setSelectedCategory}
+              pullingModels={pullingModels}
+              installedModels={registry?.models.map(m => m.id) || []}
+              onPullModel={pullOllamaModel}
+              onSelectModel={(modelId) => {
+                onSelectModel(modelId, 'ollama');
+                onClose();
+              }}
+              ollamaConnected={registry?.providers.find(p => p.type === 'ollama')?.connected || false}
             />
           )}
           {activeTab === 'storage' && (
@@ -935,6 +1049,198 @@ function HuggingfaceTab({
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+
+// Recommended Models Tab Component
+function RecommendedModelsTab({
+  models,
+  categories,
+  selectedCategory,
+  onCategoryChange,
+  pullingModels,
+  installedModels,
+  onPullModel,
+  onSelectModel,
+  ollamaConnected,
+}: {
+  models: any[];
+  categories: any[];
+  selectedCategory: string;
+  onCategoryChange: (category: string) => void;
+  pullingModels: Map<string, { status: string; percentage: number }>;
+  installedModels: string[];
+  onPullModel: (modelId: string) => void;
+  onSelectModel: (modelId: string) => void;
+  ollamaConnected: boolean;
+}) {
+  const filteredModels = selectedCategory === "all" 
+    ? models 
+    : models.filter(m => m.category === selectedCategory);
+
+  // Check if a model is installed (fuzzy match)
+  const isInstalled = (modelId: string) => {
+    const normalizedId = modelId.toLowerCase().split(":")[0];
+    return installedModels.some(installed => 
+      installed.toLowerCase().includes(normalizedId) ||
+      normalizedId.includes(installed.toLowerCase().split(":")[0])
+    );
+  };
+
+  if (!ollamaConnected) {
+    return (
+      <div className="p-6 text-center">
+        <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+        <h3 className="text-lg font-medium mb-2">Ollama Not Connected</h3>
+        <p className="text-zinc-400 text-sm mb-4">
+          Start Ollama to download and manage models.
+        </p>
+        <div className="p-4 bg-zinc-800 rounded-lg text-left text-sm">
+          <p className="text-zinc-400 mb-2">Run this in your terminal:</p>
+          <code className="text-amber-400">ollama serve</code>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 space-y-4">
+      {/* Info banner */}
+      <div className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+        <Sparkles className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+        <p className="text-xs text-amber-400">
+          <strong>One-click install!</strong> These models work great with MrSnappy. 
+          Click "Install" to download, then "Use" to start chatting.
+        </p>
+      </div>
+
+      {/* Category filter */}
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => onCategoryChange("all")}
+          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+            selectedCategory === "all"
+              ? "bg-amber-500 text-zinc-900"
+              : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+          }`}
+        >
+          All
+        </button>
+        {categories.map((cat: any) => (
+          <button
+            key={cat.id}
+            onClick={() => onCategoryChange(cat.id)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+              selectedCategory === cat.id
+                ? "bg-amber-500 text-zinc-900"
+                : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+            }`}
+          >
+            {cat.icon} {cat.name}
+          </button>
+        ))}
+      </div>
+
+      {/* Model list */}
+      <div className="space-y-2">
+        {filteredModels.map((model: any) => {
+          const installed = isInstalled(model.id);
+          const pulling = pullingModels.get(model.id);
+
+          return (
+            <div
+              key={model.id}
+              className={`p-4 rounded-lg border transition-all ${
+                installed
+                  ? "border-green-500/30 bg-green-500/5"
+                  : model.recommended
+                  ? "border-amber-500/30 bg-amber-500/5"
+                  : "border-zinc-700 bg-zinc-800/50"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className="font-medium text-zinc-100">
+                      {model.name}
+                    </span>
+                    {model.recommended && !installed && (
+                      <span className="px-1.5 py-0.5 text-xs bg-amber-500/20 text-amber-400 rounded">
+                        ⭐ Recommended
+                      </span>
+                    )}
+                    {installed && (
+                      <span className="px-1.5 py-0.5 text-xs bg-green-500/20 text-green-400 rounded">
+                        ✓ Installed
+                      </span>
+                    )}
+                    <span className="px-1.5 py-0.5 text-xs bg-zinc-700 text-zinc-400 rounded">
+                      {model.size}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-500 mb-2">{model.description}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {(model.capabilities || []).map((cap: string) => (
+                      <span
+                        key={cap}
+                        className="px-1.5 py-0.5 text-xs bg-zinc-800 text-zinc-500 rounded"
+                      >
+                        {cap}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {pulling ? (
+                    <div className="flex items-center gap-2">
+                      <div className="w-24 h-2 bg-zinc-700 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-amber-500 transition-all"
+                          style={{ width: `${pulling.percentage}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-zinc-400 w-12">{pulling.percentage}%</span>
+                    </div>
+                  ) : installed ? (
+                    <button
+                      onClick={() => onSelectModel(model.id)}
+                      className="px-4 py-2 text-sm bg-green-500 hover:bg-green-400 text-zinc-900 rounded-lg font-medium transition-colors"
+                    >
+                      Use
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => onPullModel(model.id)}
+                      className="px-4 py-2 text-sm bg-amber-500 hover:bg-amber-400 text-zinc-900 rounded-lg font-medium flex items-center gap-1.5 transition-colors"
+                    >
+                      <Download className="w-4 h-4" />
+                      Install
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Pull progress status */}
+              {pulling && (
+                <div className="mt-2 text-xs text-zinc-400">
+                  {pulling.status}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Ollama hint */}
+      <div className="p-3 bg-zinc-800/50 rounded-lg text-xs text-zinc-500">
+        <p>
+          <strong>Tip:</strong> You can also install models manually:{" "}
+          <code className="text-amber-400">ollama pull model-name</code>
+        </p>
+      </div>
     </div>
   );
 }
