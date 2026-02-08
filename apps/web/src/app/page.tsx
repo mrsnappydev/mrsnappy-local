@@ -269,7 +269,10 @@ export default function Home() {
         signal: abortControllerRef.current.signal,
       });
 
-      if (!res.ok) throw new Error('Failed to get response');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to get response: ${res.status}`);
+      }
 
       const reader = res.body?.getReader();
       if (!reader) throw new Error('No reader available');
